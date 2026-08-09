@@ -1,0 +1,62 @@
+# Cloudflare ProviderConfig(s) and credentials Secret for the ssint-main
+# account (accountId ba92fe12c6c1275f965c7c86e3b392ac).
+#
+# Copied verbatim from simplesalt/base-stack@named 3.infra/cf-main.yaml
+# (simplesalt/projects#183). Two ProviderConfig objects share the name
+# ssint-main but different apiVersions/scopes — the upjet-cloudflare.m
+# variant is namespaced (dns/r2/kv/workers resources), the plain
+# upjet-cloudflare.upbound.io variant is cluster-scoped (Zero Trust `zero.*`
+# resources). Both must exist before anything below references
+# providerConfigRef.name: ssint-main.
+#
+# cloudflare-credentials-main is populated out-of-band by the
+# assemble-cloudflare-credentials-main Job (10-cloudflare/creds-job.yaml),
+# which reads the raw API token from Secret/ssint-main-cf and writes the
+# JSON-wrapped {"api_token":"..."} form here. On a fresh cluster this Secret
+# is EMPTY until that Job runs and ssint-main-cf has been populated
+# out-of-band first (see README.md "Out-of-band secrets").
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-credentials-main
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: merge
+type: Opaque
+---
+apiVersion: upjet-cloudflare.m.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: ssint-main
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: cloudflare-credentials-main
+      key: credentials
+---
+# Cluster-scoped ProviderConfig for Zero Trust managed resources
+# (zero.upjet-cloudflare.upbound.io/v1alpha1). All ssint-main account
+# resources reference providerConfigRef.name: ssint-main.
+apiVersion: upjet-cloudflare.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: ssint-main
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: cloudflare-credentials-main
+      key: credentials

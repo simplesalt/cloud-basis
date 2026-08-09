@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudflare-main-creds-assembler
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: access
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cloudflare-main-creds-assembler
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: access
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [ssint-main-cf]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [cloudflare-credentials-main]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cloudflare-main-creds-assembler
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: access
+subjects:
+  - kind: ServiceAccount
+    name: cloudflare-main-creds-assembler
+    namespace: crossplane-system
+roleRef:
+  kind: Role
+  name: cloudflare-main-creds-assembler
+  apiGroup: rbac.authorization.k8s.io
+---
+# Raw API token placeholder — populated out-of-band with the bare token value
+# (key: api_token). ssa:merge ensures Flux creates the object but never
+# overwrites a user-patched value.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ssint-main-cf
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: merge
+type: Opaque
+---
+# Reads ssint-main-cf and assembles {"api_token":"..."} into
+# cloudflare-credentials-main as required by the ssint-main ProviderConfig.
+# Re-trigger after token rotation by deleting the Job — Flux recreates it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: assemble-cloudflare-credentials-main
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: access
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 8
+  template:
+    metadata:
+      labels:
+        entity: cluster
+        capability: access
+    spec:
+      serviceAccountName: cloudflare-main-creds-assembler
+      restartPolicy: OnFailure
+      containers:
+        - name: assemble
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              TOKEN=$(kubectl get secret ssint-main-cf \
+                -n crossplane-system \
+                -o jsonpath='{.data.api_token}' 2>/dev/null | base64 -d)
+              if [ -z "$TOKEN" ]; then
+                echo "ssint-main-cf not yet populated; will retry"
+                exit 1
+              fi
+              CREDS=$(printf '{"api_token":"%s"}' "$TOKEN" | base64 -w0)
+              kubectl patch secret cloudflare-credentials-main \
+                -n crossplane-system \
+                --type=merge \
+                -p "{\"data\":{\"credentials\":\"$CREDS\"}}"
+              echo "cloudflare-credentials-main assembled successfully"

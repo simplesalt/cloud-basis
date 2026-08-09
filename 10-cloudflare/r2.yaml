@@ -1,0 +1,20 @@
+# R2 resources for the ssint-main Cloudflare account (ba92fe12...).
+# Adopted via crossplane.io/external-name matching the bucket name.
+
+apiVersion: r2.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: Bucket
+metadata:
+  name: cf-main-backups
+  namespace: crossplane-system
+  annotations:
+    crossplane.io/external-name: backups
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    name: backups
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main

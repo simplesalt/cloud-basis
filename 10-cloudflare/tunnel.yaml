@@ -1,0 +1,161 @@
+# Crossplane-managed Cloudflare Tunnel for the ssint-main account.
+# Mirrors the pattern in cf-tunnel.yaml (evans-home named-tunnel) but targets
+# the ssint-main ProviderConfig and simplesalt.company zone.
+#
+# Run-token delivery: Crossplane writes tunnel_token to
+# cluster-named-routing/ssint-main-tunnel-token via writeConnectionSecretToRef.
+# No operator action required — token is available as soon as the tunnel is Ready.
+#
+# Tunnel ID (for Config + DNS Record): the fetch-ssint-main-tunnel-id Job reads
+# status.atProvider.id and patches ssint-main-tunnel-id in flux-system.
+# The infra-tunnel Flux Kustomization (order.yaml) depends on infra and uses
+# postBuild.substituteFrom to inject ${ssint_main_tunnel_id} once the Job has run.
+apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
+kind: TrustTunnelCloudflared
+metadata:
+  name: ssint-main-tunnel
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: ssint-main-cluster
+    configSrc: cloudflare
+  providerConfigRef:
+    name: ssint-main
+  writeConnectionSecretToRef:
+    name: ssint-main-tunnel-token
+    namespace: cluster-named-routing
+---
+# Placeholder for the tunnel UUID. The fetch-ssint-main-tunnel-id Job below
+# patches this with status.atProvider.id after the tunnel is Ready.
+# ssa:merge prevents Flux from overwriting the Job-patched value.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ssint-main-tunnel-id
+  namespace: flux-system
+  labels:
+    entity: cluster
+    capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: merge
+type: Opaque
+---
+# RBAC for the tunnel-ID injection Job.
+# ClusterRole: GET the cluster-scoped TrustTunnelCloudflared object.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ssint-main-tunnel-id-injector
+  labels:
+    entity: cluster
+    capability: infra
+rules:
+  - apiGroups: ["zero.upjet-cloudflare.upbound.io"]
+    resources: [trusttunnelcloudflareds]
+    resourceNames: [ssint-main-tunnel]
+    verbs: [get, watch]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ssint-main-tunnel-id-injector
+  namespace: flux-system
+  labels:
+    entity: cluster
+    capability: infra
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ssint-main-tunnel-id-injector
+  labels:
+    entity: cluster
+    capability: infra
+subjects:
+  - kind: ServiceAccount
+    name: ssint-main-tunnel-id-injector
+    namespace: flux-system
+roleRef:
+  kind: ClusterRole
+  name: ssint-main-tunnel-id-injector
+  apiGroup: rbac.authorization.k8s.io
+---
+# Role: PATCH the ssint-main-tunnel-id Secret in flux-system.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ssint-main-tunnel-id-injector
+  namespace: flux-system
+  labels:
+    entity: cluster
+    capability: infra
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [ssint-main-tunnel-id]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ssint-main-tunnel-id-injector
+  namespace: flux-system
+  labels:
+    entity: cluster
+    capability: infra
+subjects:
+  - kind: ServiceAccount
+    name: ssint-main-tunnel-id-injector
+    namespace: flux-system
+roleRef:
+  kind: Role
+  name: ssint-main-tunnel-id-injector
+  apiGroup: rbac.authorization.k8s.io
+---
+# Reads status.atProvider.id from ssint-main-tunnel and patches ssint-main-tunnel-id.
+# Re-trigger after accidental deletion by deleting the Job — Flux recreates it.
+# Uses only kubectl (no curl); the tunnel UUID is non-sensitive.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fetch-ssint-main-tunnel-id
+  namespace: flux-system
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 8
+  template:
+    metadata:
+      labels:
+        entity: cluster
+        capability: infra
+    spec:
+      serviceAccountName: ssint-main-tunnel-id-injector
+      restartPolicy: OnFailure
+      containers:
+        - name: fetch
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              kubectl wait \
+                trusttunnelcloudflareds.zero.upjet-cloudflare.upbound.io/ssint-main-tunnel \
+                --for=condition=Ready=True \
+                --timeout=600s
+              ID=$(kubectl get \
+                trusttunnelcloudflareds.zero.upjet-cloudflare.upbound.io/ssint-main-tunnel \
+                -o jsonpath='{.status.atProvider.id}')
+              if [ -z "$ID" ]; then
+                echo "tunnel id empty after Ready; retrying"
+                exit 1
+              fi
+              kubectl patch secret ssint-main-tunnel-id \
+                -n flux-system \
+                --type=merge \
+                -p "{\"stringData\":{\"ssint_main_tunnel_id\":\"$ID\"}}"
+              echo "patched ssint-main-tunnel-id with $ID"

@@ -1,0 +1,72 @@
+# cloudflared daemon for the ssint-main tunnel.
+#
+# Extracted from simplesalt/base-stack@named 3.infra/post-tunnel/tunnel-config.yaml
+# per simplesalt/projects#183: that file's other two objects
+# (TrustTunnelCloudflaredConfig/ssint-main-tunnel-config and
+# Record/info-simplesalt-company) already live in simplesalt/brain
+# manifests/cloudflare-zero-trust-main.yaml and are carried into
+# zero-trust.yaml (this directory) from there instead — see that file's
+# header for the dedupe note (simplesalt/projects#184).
+#
+# HelmRelease stays here as generic tunnel-daemon plumbing (no
+# simplesalt.company branding). Token is written by Crossplane to
+# ssint-main-tunnel-token (namespace cluster-named-routing) via the
+# TrustTunnelCloudflared object's writeConnectionSecretToRef (tunnel.yaml)
+# and patched with the run token by the fetch-ssint-main-tunnel-token Job
+# (tunnel-token-job.yaml).
+#
+# NOTE: `cluster-named-routing` is a hardcoded cluster-specific namespace
+# name carried over unchanged from base-stack. The new cluster's name is
+# undecided (simplesalt/projects#216) — flag/rename this if/when a naming
+# convention for the new cluster's namespaces is set.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cloudflared-main
+  namespace: cluster-named-routing
+  labels:
+    app.kubernetes.io/name: cloudflared-main
+    app.kubernetes.io/part-of: routing
+    app.kubernetes.io/component: tunnel
+spec:
+  targetNamespace: cluster-named-routing
+  interval: 5m
+  chart:
+    spec:
+      chart: cloudflare-tunnel-remote
+      sourceRef:
+        kind: HelmRepository
+        name: cloudflare
+        namespace: flux-system
+      interval: 12h
+  install:
+    createNamespace: true
+  valuesFrom:
+    - kind: Secret
+      name: ssint-main-tunnel-token
+      valuesKey: tunnel_token
+      targetPath: cloudflare.tunnel_token
+  values:
+    image:
+      repository: cloudflare/cloudflared
+    args:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+    replicaCount: 1
+    livenessProbe:
+      enabled: false
+    readinessProbe:
+      enabled: false
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    securityContext:
+      capabilities:
+        add:
+          - NET_ADMIN

@@ -1,0 +1,184 @@
+# Fetches the cloudflared run token from the CF API and writes it to the
+# ssint-main-tunnel-token connection secret.
+#
+# Background: TrustTunnelCloudflared (Crossplane) creates the tunnel and sets up
+# writeConnectionSecretToRef, but the CF API only returns the run token via a
+# dedicated GET endpoint — not in the create or read responses. Crossplane
+# therefore leaves the connection secret empty. This Job fills it.
+#
+# Flow:
+#   init1 (bitnami/kubectl): wait for tunnel Ready, write tunnel ID to emptyDir
+#   init2 (curlimages/curl): read CF credentials from mounted secret, call CF API
+#                             token endpoint, write run token to emptyDir
+#   main  (bitnami/kubectl): read run token from emptyDir, patch connection secret
+#
+# Re-trigger after tunnel recreation: delete the Job — Flux recreates it.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ssint-main-tunnel-token-fetcher
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: infra
+---
+# ClusterRole: read the TrustTunnelCloudflared CR (cluster-scoped resource)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ssint-main-tunnel-token-fetcher
+  labels:
+    entity: cluster
+    capability: infra
+rules:
+  - apiGroups: ["zero.upjet-cloudflare.upbound.io"]
+    resources: [trusttunnelcloudflareds]
+    resourceNames: [ssint-main-tunnel]
+    verbs: [get, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ssint-main-tunnel-token-fetcher
+  labels:
+    entity: cluster
+    capability: infra
+subjects:
+  - kind: ServiceAccount
+    name: ssint-main-tunnel-token-fetcher
+    namespace: crossplane-system
+roleRef:
+  kind: ClusterRole
+  name: ssint-main-tunnel-token-fetcher
+  apiGroup: rbac.authorization.k8s.io
+---
+# Role in cluster-named-routing: patch the tunnel run-token connection secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ssint-main-tunnel-token-patcher
+  namespace: cluster-named-routing
+  labels:
+    entity: cluster
+    capability: infra
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [ssint-main-tunnel-token]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ssint-main-tunnel-token-fetcher
+  namespace: cluster-named-routing
+  labels:
+    entity: cluster
+    capability: infra
+subjects:
+  - kind: ServiceAccount
+    name: ssint-main-tunnel-token-fetcher
+    namespace: crossplane-system
+roleRef:
+  kind: Role
+  name: ssint-main-tunnel-token-patcher
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fetch-ssint-main-tunnel-token
+  namespace: crossplane-system
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 8
+  template:
+    metadata:
+      labels:
+        entity: cluster
+        capability: infra
+    spec:
+      serviceAccountName: ssint-main-tunnel-token-fetcher
+      restartPolicy: OnFailure
+      volumes:
+        - name: cf-creds
+          secret:
+            secretName: cloudflare-credentials-main
+            items:
+              - key: credentials
+                path: credentials
+        - name: shared
+          emptyDir: {}
+      initContainers:
+        - name: wait-for-tunnel
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                STATUS=$(kubectl get \
+                  trusttunnelcloudflareds.zero.upjet-cloudflare.upbound.io/ssint-main-tunnel \
+                  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+                ID=$(kubectl get \
+                  trusttunnelcloudflareds.zero.upjet-cloudflare.upbound.io/ssint-main-tunnel \
+                  -o jsonpath='{.status.atProvider.id}' 2>/dev/null || echo "")
+                if [ "$STATUS" = "True" ] && [ -n "$ID" ]; then
+                  echo "$ID" > /shared/tunnel_id
+                  echo "Tunnel ID written: $ID"
+                  break
+                fi
+                echo "Waiting for tunnel Ready (status: $STATUS)..."
+                sleep 15
+              done
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+        - name: fetch-token
+          image: curlimages/curl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              TUNNEL_ID=$(cat /shared/tunnel_id)
+              CF_TOKEN=$(sed -n 's/.*"api_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /cf-creds/credentials)
+              if [ -z "$CF_TOKEN" ]; then
+                echo "Could not extract token from credentials:"
+                cat /cf-creds/credentials
+                exit 1
+              fi
+              echo "CF token extracted (len=${#CF_TOKEN}), fetching tunnel run token..."
+              RESPONSE=$(curl -s \
+                -H "Authorization: Bearer $CF_TOKEN" \
+                "https://api.cloudflare.com/client/v4/accounts/ba92fe12c6c1275f965c7c86e3b392ac/cfd_tunnel/$TUNNEL_ID/token")
+              TOKEN=$(echo "$RESPONSE" | sed -n 's/.*"result":"\([^"]*\)".*/\1/p')
+              if [ -z "$TOKEN" ]; then
+                echo "Empty token in response: $RESPONSE"
+                exit 1
+              fi
+              echo "$TOKEN" > /shared/tunnel_token
+              echo "Token fetched for tunnel $TUNNEL_ID"
+          volumeMounts:
+            - name: cf-creds
+              mountPath: /cf-creds
+              readOnly: true
+            - name: shared
+              mountPath: /shared
+      containers:
+        - name: patch-secret
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              TOKEN=$(cat /shared/tunnel_token)
+              kubectl patch secret ssint-main-tunnel-token \
+                -n cluster-named-routing \
+                --type=merge \
+                -p "{\"stringData\":{\"tunnel_token\":\"$TOKEN\"}}"
+              echo "Patched ssint-main-tunnel-token with run token"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+              readOnly: true

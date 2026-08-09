@@ -1,0 +1,301 @@
+# Cloudflare Zero Trust Access configuration for the ssint-main account
+# (proprietary SimpleSalt production account, accountId
+# ba92fe12c6c1275f965c7c86e3b392ac, zone simplesalt.company).
+#
+# Copied from simplesalt/brain manifests/cloudflare-zero-trust-main.yaml
+# (simplesalt/projects#184). That file's own header traces its lineage
+# through several earlier base-stack locations
+# (2.access/cf-main-zero-trust-org.yaml, 2.access/cf-zero-trust-apps-appflowy-main.yaml,
+# 3.infra/cf-main-idp.yaml, 3.infra/post-tunnel/tunnel-config.yaml) —
+# tracked in simplesalt/projects#111.
+#
+# ProviderConfig ssint-main lives in 00-providers/cloudflare-provider.yaml
+# in this repo — referenced here by name only via providerConfigRef, so its
+# location doesn't matter to these resources.
+#
+# The cloudflared-main HelmRelease (generic tunnel daemon) and the
+# TrustTunnelCloudflared + tunnel-ID fetch Job are generic infra plumbing,
+# not proprietary content — they live in 10-cloudflare/tunnel-daemon.yaml
+# and 10-cloudflare/tunnel.yaml respectively. Only the tunnel's ingress
+# Config + DNS Record (which encode info.simplesalt.company) are here.
+#
+# DEDUPE DECISIONS (simplesalt/projects#183 + #184 both name these as
+# live dual-declarations — currently both `brain` and base-stack's `infra`/
+# `access` Kustomizations claim copies of several objects below, and
+# ownership flaps between them on the live cluster):
+#
+#   - TrustOrganization/cf-main-zero-trust-org, Secret/ssint-main-g-idp-id,
+#     Secret/ssint-main-g-idp-secret, TrustAccessIdentityProvider/
+#     cf-main-idp-ssint-sso, TrustTunnelCloudflaredConfig/
+#     ssint-main-tunnel-config, Record/info-simplesalt-company: all also
+#     exist, byte-identical in `spec`, in base-stack@named
+#     (2.access/cf-main-zero-trust-org.yaml, 3.infra/cf-main-idp.yaml,
+#     3.infra/post-tunnel/tunnel-config.yaml). The ONLY differences were
+#     labels (base-stack: entity: cluster, capability: infra/access; brain:
+#     entity: ssint, env: main, capability: access) and base-stack
+#     additionally carrying `kustomize.toolkit.fluxcd.io/prune: disabled`.
+#     Kept brain's copies here: the ssint/main/access labels correctly mark
+#     this as SimpleSalt proprietary account content, and dropping
+#     `prune: disabled` is safe because a single canonical declaration in
+#     this repo has no other claimant to flap against.
+#
+#   - TrustAccessIdentityProvider/cf-main-idp-ssint-sso: simplesalt/projects#184
+#     states this is "adopted by external ID 42cbdc64-699e-4e17-b470-fb7cda3c0791"
+#     via crossplane.io/external-name. Verified against BOTH source copies
+#     (brain and base-stack 3.infra/cf-main-idp.yaml): NEITHER carries a
+#     crossplane.io/external-name annotation on this object. That UUID only
+#     appears as a value/comment inside TrustAccessApplication's
+#     allowedIdps[] list below (a plain spec reference, not an adoption
+#     annotation). Carried over exactly as found in source — no annotation
+#     invented. Flagged in the migration report; if adoption-by-external-name
+#     was actually intended for this object, it needs to be added
+#     deliberately (with the correct value confirmed against the live CF
+#     API), not assumed from this migration.
+apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
+kind: TrustOrganization
+metadata:
+  annotations:
+    crossplane.io/external-name: ba92fe12c6c1275f965c7c86e3b392ac
+  name: cf-main-zero-trust-org
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    authDomain: fqurzlaaagt.cloudflareaccess.com
+    name: fqurzlaaagt.cloudflareaccess.com
+    allowAuthenticateViaWarp: false
+    denyUnmatchedRequests: false
+  providerConfigRef:
+    name: ssint-main
+
+---
+# Cloudflare Zero Trust Identity Provider for the ssint-main account.
+# Registers a Google Workspace (G Suite) IdP for simplesalt.company.
+#
+# Two-secret pattern: operator patches each secret independently, no
+# assembly Job.
+#   ssint-main-g-idp-id      — Google OAuth client ID (key: client_id)
+#   ssint-main-g-idp-secret  — Google OAuth client secret (key: client_secret)
+#
+# Operator steps:
+# 1. Create OAuth2 client in GCP Console (project: internalapps-481018, see
+#    20-gcp/gcp-sso.yaml):
+#      Type: Web application
+#      Authorized redirect URI: https://fqurzlaaagt.cloudflareaccess.com/cdn-cgi/access/callback
+# 2. Patch the secrets:
+#      kubectl patch secret ssint-main-g-idp-id -n flux-system \
+#        --type=merge -p '{"stringData":{"client_id":"<ID>"}}'
+#      kubectl patch secret ssint-main-g-idp-secret -n crossplane-system \
+#        --type=merge -p '{"stringData":{"client_secret":"<SECRET>"}}'
+# On a fresh cluster both Secrets are EMPTY until these steps run.
+
+---
+# Google OAuth client ID — lives in flux-system so Flux substituteFrom can
+# read it. Operator patches client_id out-of-band; Flux injects
+# ${client_id} into manifests below at reconcile time via
+# postBuild.substituteFrom on the Kustomization that owns this file.
+# UNRESOLVED VARIABLE: ${client_id} — see README.md "Unsubstituted variables".
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ssint-main-g-idp-id
+  namespace: flux-system
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: merge
+type: Opaque
+
+---
+# Google OAuth client secret — Flux declares the shell; operator patches
+# client_secret out-of-band.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ssint-main-g-idp-secret
+  namespace: crossplane-system
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: merge
+type: Opaque
+
+---
+# Identity Provider: SS SSO (ssint-main account)
+# Google Workspace IdP for @simplesalt.company. Uses object-form config to
+# match the v0.2.6 provider-cloudflare-zero CRD (bare object, not list).
+# clientId is injected at reconcile time via postBuild.substituteFrom,
+# reading client_id from ssint-main-g-idp-id.
+# UNRESOLVED VARIABLE: ${client_id} — see README.md "Unsubstituted variables".
+apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
+kind: TrustAccessIdentityProvider
+metadata:
+  name: cf-main-idp-ssint-sso
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: SS SSO
+    type: google-apps
+    config:
+      appsDomain: simplesalt.company
+      clientId: "${client_id}"
+      clientSecretSecretRef:
+        name: ssint-main-g-idp-secret
+        namespace: crossplane-system
+        key: client_secret
+      pkceEnabled: true
+    scimConfig:
+      enabled: false
+  providerConfigRef:
+    name: ssint-main
+
+---
+# Cloudflare Zero Trust Access gate for info.simplesalt.company (ssint-main
+# account, ba92fe12…). File/object names still say "appflowy" — that's the
+# original tenant this was set up for, but the tunnel ingress for this
+# hostname (below) now routes to big-agi, not AppFlowy (which has since been
+# removed entirely). This Access app is the live gate for whatever's
+# actually published at info.simplesalt.company today — keep it regardless
+# of the name.
+#
+# Conventions:
+#   * TrustAccessPolicy adopted via external-name from the existing CF
+#     reusable policy.
+#   * TrustAccessApplication destinations[] (public uri); no
+#     selfHostedDomains.
+#   * policies[] referenced by id + precedence, never inline body.
+#   * autoRedirectToIdentity with exactly one allowedIdps entry.
+#   * No crossplane.io/external-name on the Application → Crossplane
+#     CREATES it.
+
+---
+# Adopt the existing reusable "simplesalt.company Email Domain" policy.
+# external-name pins to the pre-existing CF UUID; Crossplane manages drift.
+apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
+kind: TrustAccessPolicy
+metadata:
+  name: simplesalt-email-domain
+  annotations:
+    crossplane.io/external-name: "79bac8d3-6c82-4ac5-bbdb-f98a3388236c"
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: simplesalt.company Email Domain
+    decision: allow
+    include:
+      - emailDomain:
+          domain: simplesalt.company
+  providerConfigRef:
+    name: ssint-main
+
+---
+# Access Application gating info.simplesalt.company via Google SSO.
+# allowedIdps: SS SSO IdP (42cbdc64…) — TrustAccessIdentityProvider
+# cf-main-idp-ssint-sso above (see the dedupe note at the top of this file
+# re: this ID not actually being a crossplane.io/external-name annotation
+# on that object in source).
+# policies: simplesalt-email-domain policy adopted above (79bac8d3…).
+apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
+kind: TrustAccessApplication
+metadata:
+  name: cloudflare-app-appflowy-main
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: appflowy-main
+    type: self_hosted
+    destinations:
+      - type: public
+        uri: info.simplesalt.company
+    sessionDuration: 24h
+    autoRedirectToIdentity: true
+    allowedIdps:
+      - 42cbdc64-699e-4e17-b470-fb7cda3c0791  # SS SSO (ssint-main)
+    policies:
+      - id: 79bac8d3-6c82-4ac5-bbdb-f98a3388236c  # simplesalt.company Email Domain
+        precedence: 1
+  providerConfigRef:
+    name: ssint-main
+
+---
+# Ingress config for the ssint-main tunnel (TrustTunnelCloudflared
+# ssint-main-tunnel stays in 10-cloudflare/tunnel.yaml — this Config just
+# references its UUID by value, injected via ${ssint_main_tunnel_id}).
+# Routes info.simplesalt.company to big-agi (port 3000).
+# Public TLS is terminated at Cloudflare's edge; intra-cluster is plain
+# HTTP.
+# UNRESOLVED VARIABLE: ${ssint_main_tunnel_id} — see README.md
+# "Unsubstituted variables". Without postBuild.substituteFrom wired up on
+# the owning Kustomization, this renders with the literal string
+# "${ssint_main_tunnel_id}" and the resource is Synced=False.
+apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
+kind: TrustTunnelCloudflaredConfig
+metadata:
+  name: ssint-main-tunnel-config
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    tunnelId: "${ssint_main_tunnel_id}"
+    config:
+      ingress:
+        - hostname: info.simplesalt.company
+          service: http://big-agi.ssint-main-ai.svc.k.famevans.win:3000
+        - service: http_status:404
+  providerConfigRef:
+    name: ssint-main
+
+---
+# DNS CNAME for info.simplesalt.company → CF Tunnel (simplesalt.company
+# zone). Proxied: Cloudflare edge handles TLS; tunnel delivers plain HTTP to
+# Traefik.
+# UNRESOLVED VARIABLE: ${ssint_main_tunnel_id} — see README.md
+# "Unsubstituted variables".
+#
+# NOTE: `big-agi.ssint-main-ai.svc.k.famevans.win` above and the `.svc`
+# suffix convention are carried over unchanged from base-stack/brain. The
+# `famevans.win` cluster domain and `ssint-main-ai` namespace are existing,
+# hardcoded references to the CURRENT cluster; the new cluster's name is
+# undecided (simplesalt/projects#216). Flag/update this hostname when the
+# new cluster's service-domain convention is settled — until then it is
+# reproduced verbatim from source, not invented here.
+apiVersion: dns.upjet-cloudflare.upbound.io/v1alpha1
+kind: Record
+metadata:
+  name: info-simplesalt-company
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+spec:
+  forProvider:
+    zoneId: 260b251cdb53f8376875a8eb8d03ca0b
+    name: info
+    type: CNAME
+    content: ${ssint_main_tunnel_id}.cfargotunnel.com
+    proxied: true
+    ttl: 1
+  providerConfigRef:
+    name: ssint-main

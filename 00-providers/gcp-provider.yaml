@@ -1,0 +1,60 @@
+# GCP ProviderConfig and credentials Secret for project internalapps-481018
+# (SimpleSalt's proprietary GCP project, simplesalt/projects#111).
+#
+# DEDUPE DECISION (simplesalt/projects#183 + #184): this exact pair —
+# Secret/gcp-credentials + ProviderConfig/gcp-default, same name, same
+# projectID: internalapps-481018 — was declared independently in BOTH
+# simplesalt/base-stack@named 3.infra/gcp.yaml and simplesalt/brain
+# manifests/gcp-sso.yaml. Diffed byte-for-byte: `spec` is IDENTICAL in both
+# copies. The only differences were:
+#   - labels: base-stack used `entity: cluster, capability: infra`;
+#     brain used `entity: ssint, env: main, capability: access`.
+#   - base-stack's copies additionally carried
+#     `kustomize.toolkit.fluxcd.io/prune: disabled` on both objects (and
+#     `ssa: merge` was on the Secret in both).
+# Kept brain's copy: its labels correctly identify this as SimpleSalt
+# proprietary account content (entity: ssint) rather than generic cluster
+# infra, and it groups naturally with its GCP SSO dependents
+# (20-gcp/gcp-sso.yaml: ProjectService, ServiceAccount, ServiceAccountKey),
+# which also use the ssint/main/access label scheme. Dropped
+# `prune: disabled`: that annotation was a defensive artifact of the
+# base-stack/brain dual-ownership flap (two live Kustomizations racing to
+# reconcile the same object) — with a single canonical declaration here and
+# no other claimant, it serves no purpose and pruning cloud-basis's own
+# Kustomization is the intended control path.
+#
+# gcp-credentials is populated OUT-OF-BAND: patch the JSON SA key directly
+# into the `credentials` key (there is no assembler Job by design). On a
+# fresh cluster this Secret is EMPTY until that patch is applied:
+#   kubectl patch secret gcp-credentials -n crossplane-system --type=merge \
+#     -p "{\"data\":{\"credentials\":\"$(base64 -w0 key.json)\"}}"
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gcp-credentials
+  namespace: crossplane-system
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: merge
+type: Opaque
+---
+apiVersion: gcp.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: gcp-default
+  labels:
+    entity: ssint
+    env: main
+    capability: access
+spec:
+  # Matches the loaded SA key (hermes-agent-access@internalapps-481018).
+  projectID: internalapps-481018
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: gcp-credentials
+      key: credentials
