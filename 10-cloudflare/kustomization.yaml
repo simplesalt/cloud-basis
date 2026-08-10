@@ -7,4 +7,3 @@ resources:
   - tunnel-token-job.yaml
   - tunnel-daemon.yaml
   - creds-job.yaml
-  - zero-trust.yaml

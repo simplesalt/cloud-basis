@@ -3,10 +3,11 @@
 # Extracted from simplesalt/base-stack@named 3.infra/post-tunnel/tunnel-config.yaml
 # per simplesalt/projects#183: that file's other two objects
 # (TrustTunnelCloudflaredConfig/ssint-main-tunnel-config and
-# Record/info-simplesalt-company) already live in simplesalt/brain
-# manifests/cloudflare-zero-trust-main.yaml and are carried into
-# zero-trust.yaml (this directory) from there instead — see that file's
-# header for the dedupe note (simplesalt/projects#184).
+# Record/info-simplesalt-company) are owned by simplesalt/brain
+# (manifests/cloudflare-zero-trust-main.yaml) and are deliberately NOT
+# declared in this repo — see README.md "The dedupe" (simplesalt/projects#226).
+# This repo previously carried a duplicate copy in 10-cloudflare/zero-trust.yaml;
+# that file was removed as part of the dedupe.
 #
 # HelmRelease stays here as generic tunnel-daemon plumbing (no
 # simplesalt.company branding). Token is written by Crossplane to
