@@ -84,7 +84,10 @@ on come from `simplesalt/basis`; use `dependsOn: basis` (or
 Several objects were declared independently in both `base-stack` and
 `brain`. Diffed byte-for-byte before choosing; in every case `spec` was
 **identical** between the two copies, so no live-config decision was
-required — only a documentation/label decision:
+required — only a documentation/label decision. This table is exhaustive:
+every SimpleSalt-proprietary object independently declared in both
+`base-stack@named` and `brain` as of this repo's initial content is listed
+below (confirmed by audit, simplesalt/projects#183):
 
 | Objects | Only differences found | Kept |
 |---|---|---|
@@ -94,8 +97,10 @@ required — only a documentation/label decision:
 | `TrustAccessIdentityProvider/cf-main-idp-ssint-sso` | same as above | brain's copy |
 | `TrustTunnelCloudflaredConfig/ssint-main-tunnel-config` | same as above | brain's copy |
 | `Record/info-simplesalt-company` | same as above | brain's copy |
+| `TrustAccessPolicy/simplesalt-email-domain`, `TrustAccessApplication/cloudflare-app-appflowy-main` | labels (`entity: cluster, capability: access` vs `entity: ssint, env: main, capability: access`); base-stack's copy (`2.access/cf-zero-trust-apps-appflowy-main.yaml`) also carried `kustomize.toolkit.fluxcd.io/prune: disabled` | brain's copy (`10-cloudflare/zero-trust.yaml`) |
+| `ProjectService/admin-googleapis-com`, `ServiceAccount/cloudflare-sso-agent`, `ServiceAccountKey/cloudflare-sso-agent-key` | labels (`entity: cluster, capability: infra` vs `entity: ssint, env: main, capability: access`); base-stack's copy (`3.infra/gcp-cloudflare-sso.yaml`) also carried `kustomize.toolkit.fluxcd.io/prune: disabled` | brain's copy (`20-gcp/gcp-sso.yaml`) |
 
-Rationale for keeping brain's copies in all six cases: the `entity: ssint,
+Rationale for keeping brain's copies in all eight cases: the `entity: ssint,
 env: main, capability: access` labels correctly identify this as
 SimpleSalt-proprietary account content, consistent with the other access-tier
 objects it's declared alongside (`TrustAccessPolicy`, `TrustAccessApplication`,
@@ -107,6 +112,20 @@ in all cases: that annotation was a defensive artifact of the live
 reconcile — and prune — the same object); with exactly one canonical
 declaration here and no other claimant, it serves no purpose, and pruning
 this repo's own Kustomization is the intended control path going forward.
+
+**One label correction found by the same audit (simplesalt/projects#183):**
+`ClusterIssuer/simplesalt` (`30-certs/simplesalt-certs.yaml`) was migrated
+with `capability: access`, unlike every other object above where only
+`entity`/`env` normalize and `capability`'s *value* carries over unchanged.
+Its base-stack counterpart (`3.infra/certs.yaml`) used `capability: certs`
+(no `env` field), and `certs` is a distinct, actively-used SimpleSalt
+capability value — base-stack's `cert-manager` Namespace and its
+`cert-manager` controller `HelmRelease` (`1.basis/ns.yaml`,
+`1.basis/controllers.yaml`) both also use `capability: certs`, separate from
+`access`/`infra`. Corrected here to `capability: certs` to match. Verified
+the `capability` label is never used as a selector (`matchLabels`/
+`labelSelector`) anywhere in this repo or in `base-stack`, so this is a
+label-only, no-behavior-change fix.
 
 **Discrepancy found and NOT resolved by invention:** simplesalt/projects#184
 states `TrustAccessIdentityProvider/cf-main-idp-ssint-sso` is "adopted by

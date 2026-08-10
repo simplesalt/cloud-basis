@@ -29,7 +29,7 @@ metadata:
   labels:
     entity: ssint
     env: main
-    capability: access
+    capability: certs
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
