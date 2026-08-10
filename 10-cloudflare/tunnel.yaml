@@ -10,10 +10,21 @@
 # status.atProvider.id and patches ssint-main-tunnel-id in flux-system.
 # The infra-tunnel Flux Kustomization (order.yaml) depends on infra and uses
 # postBuild.substituteFrom to inject ${ssint_main_tunnel_id} once the Job has run.
+#
+# Adopted, not created: external-name pins this to the tunnel that already
+# exists in Cloudflare (name ssint-main-cluster, UUID
+# 83c27a64-4074-474c-9a8f-19448d1c2081 — verified 2026-08-10 against both this
+# cluster's status.atProvider.id and the Cloudflare API). Without it, a
+# greenfield cluster would have Crossplane create a *new* tunnel with a
+# *different* UUID. Downstream, simplesalt/brain now hardcodes this same UUID
+# instead of consuming it via postBuild.substituteFrom. See
+# simplesalt/projects#235.
 apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
 kind: TrustTunnelCloudflared
 metadata:
   name: ssint-main-tunnel
+  annotations:
+    crossplane.io/external-name: "83c27a64-4074-474c-9a8f-19448d1c2081"
   labels:
     entity: cluster
     capability: infra
@@ -28,6 +39,12 @@ spec:
     name: ssint-main-tunnel-token
     namespace: cluster-named-routing
 ---
+# Vestigial pending removal (simplesalt/projects#235): as of the hardcoding
+# decision, nothing consumes this Secret anymore — simplesalt/brain no longer
+# substitutes ${ssint_main_tunnel_id}. Retained for now (owner said "for now")
+# so the substitution path is trivially reversible; the Job/Secret/RBAC below
+# are harmless but unused.
+#
 # Placeholder for the tunnel UUID. The fetch-ssint-main-tunnel-id Job below
 # patches this with status.atProvider.id after the tunnel is Ready.
 # ssa:merge prevents Flux from overwriting the Job-patched value.
