@@ -24,20 +24,23 @@
 # `access` Kustomizations claim copies of several objects below, and
 # ownership flaps between them on the live cluster):
 #
-#   - TrustOrganization/cf-main-zero-trust-org, Secret/ssint-main-g-idp-id,
-#     Secret/ssint-main-g-idp-secret, TrustAccessIdentityProvider/
-#     cf-main-idp-ssint-sso, TrustTunnelCloudflaredConfig/
-#     ssint-main-tunnel-config, Record/info-simplesalt-company: all also
-#     exist, byte-identical in `spec`, in base-stack@named
-#     (2.access/cf-main-zero-trust-org.yaml, 3.infra/cf-main-idp.yaml,
-#     3.infra/post-tunnel/tunnel-config.yaml). The ONLY differences were
-#     labels (base-stack: entity: cluster, capability: infra/access; brain:
-#     entity: ssint, env: main, capability: access) and base-stack
-#     additionally carrying `kustomize.toolkit.fluxcd.io/prune: disabled`.
-#     Kept brain's copies here: the ssint/main/access labels correctly mark
-#     this as SimpleSalt proprietary account content, and dropping
-#     `prune: disabled` is safe because a single canonical declaration in
-#     this repo has no other claimant to flap against.
+#   - TrustOrganization/cf-main-zero-trust-org, the former client_id
+#     placeholder Secret (deleted — see below), Secret/ssint-main-g-idp-secret,
+#     TrustAccessIdentityProvider/cf-main-idp-ssint-sso,
+#     TrustTunnelCloudflaredConfig/ssint-main-tunnel-config,
+#     Record/info-simplesalt-company: all also existed, byte-identical in
+#     `spec`, in base-stack@named (2.access/cf-main-zero-trust-org.yaml,
+#     3.infra/cf-main-idp.yaml, 3.infra/post-tunnel/tunnel-config.yaml). The
+#     ONLY differences were labels (base-stack: entity: cluster, capability:
+#     infra/access; brain: entity: ssint, env: main, capability: access) and
+#     base-stack additionally carrying
+#     `kustomize.toolkit.fluxcd.io/prune: disabled`. Kept brain's copies
+#     here: the ssint/main/access labels correctly mark this as SimpleSalt
+#     proprietary account content, and dropping `prune: disabled` is safe
+#     because a single canonical declaration in this repo has no other
+#     claimant to flap against. (The client_id placeholder Secret named in
+#     this dedupe was later deleted entirely, when client_id was inlined as
+#     a literal — simplesalt/projects#236.)
 #
 #   - TrustAccessIdentityProvider/cf-main-idp-ssint-sso: simplesalt/projects#184
 #     states this is "adopted by external ID 42cbdc64-699e-4e17-b470-fb7cda3c0791"
@@ -75,41 +78,19 @@ spec:
 # Cloudflare Zero Trust Identity Provider for the ssint-main account.
 # Registers a Google Workspace (G Suite) IdP for simplesalt.company.
 #
-# Two-secret pattern: operator patches each secret independently, no
-# assembly Job.
-#   ssint-main-g-idp-id      — Google OAuth client ID (key: client_id)
-#   ssint-main-g-idp-secret  — Google OAuth client secret (key: client_secret)
+# client_id is inlined as a literal below (simplesalt/projects#236) — a GCP
+# OAuth2 client_id is a public identifier, not credential material.
+# client_secret remains a genuine secret, patched out-of-band below.
 #
 # Operator steps:
 # 1. Create OAuth2 client in GCP Console (project: internalapps-481018, see
 #    20-gcp/gcp-sso.yaml):
 #      Type: Web application
 #      Authorized redirect URI: https://fqurzlaaagt.cloudflareaccess.com/cdn-cgi/access/callback
-# 2. Patch the secrets:
-#      kubectl patch secret ssint-main-g-idp-id -n flux-system \
-#        --type=merge -p '{"stringData":{"client_id":"<ID>"}}'
+# 2. Patch the secret:
 #      kubectl patch secret ssint-main-g-idp-secret -n crossplane-system \
 #        --type=merge -p '{"stringData":{"client_secret":"<SECRET>"}}'
-# On a fresh cluster both Secrets are EMPTY until these steps run.
-
----
-# Google OAuth client ID — lives in flux-system so Flux substituteFrom can
-# read it. Operator patches client_id out-of-band; Flux injects
-# ${client_id} into manifests below at reconcile time via
-# postBuild.substituteFrom on the Kustomization that owns this file.
-# UNRESOLVED VARIABLE: ${client_id} — see README.md "Unsubstituted variables".
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ssint-main-g-idp-id
-  namespace: flux-system
-  labels:
-    entity: ssint
-    env: main
-    capability: access
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: merge
-type: Opaque
+# On a fresh cluster the Secret is EMPTY until this step runs.
 
 ---
 # Google OAuth client secret — Flux declares the shell; operator patches
@@ -131,9 +112,6 @@ type: Opaque
 # Identity Provider: SS SSO (ssint-main account)
 # Google Workspace IdP for @simplesalt.company. Uses object-form config to
 # match the v0.2.6 provider-cloudflare-zero CRD (bare object, not list).
-# clientId is injected at reconcile time via postBuild.substituteFrom,
-# reading client_id from ssint-main-g-idp-id.
-# UNRESOLVED VARIABLE: ${client_id} — see README.md "Unsubstituted variables".
 apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
 kind: TrustAccessIdentityProvider
 metadata:
@@ -149,7 +127,10 @@ spec:
     type: google-apps
     config:
       appsDomain: simplesalt.company
-      clientId: "${client_id}"
+      # Deliberate exception to "no credential literals in git": a GCP
+      # OAuth2 client_id is a public identifier, not a secret. Recorded in
+      # simplesalt/projects#236.
+      clientId: "358340479202-r0acjnd0au5r9l963kjlr6n0ccshav4j.apps.googleusercontent.com"
       clientSecretSecretRef:
         name: ssint-main-g-idp-secret
         namespace: crossplane-system

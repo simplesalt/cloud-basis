@@ -90,7 +90,7 @@ required — only a documentation/label decision:
 |---|---|---|
 | `Secret/gcp-credentials`, `ProviderConfig/gcp-default` | labels (`entity: cluster, capability: infra` vs `entity: ssint, env: main, capability: access`); base-stack's copies also carried `kustomize.toolkit.fluxcd.io/prune: disabled` | brain's copy (`00-providers/gcp-provider.yaml`) |
 | `TrustOrganization/cf-main-zero-trust-org` | same as above | brain's copy (`10-cloudflare/zero-trust.yaml`) |
-| `Secret/ssint-main-g-idp-id`, `Secret/ssint-main-g-idp-secret` | same as above | brain's copy |
+| `Secret/ssint-main-g-idp-secret` (the client_id placeholder Secret was also deduped here at migration time; later deleted — see "Unsubstituted `${...}` variables" below) | same as above | brain's copy |
 | `TrustAccessIdentityProvider/cf-main-idp-ssint-sso` | same as above | brain's copy |
 | `TrustTunnelCloudflaredConfig/ssint-main-tunnel-config` | same as above | brain's copy |
 | `Record/info-simplesalt-company` | same as above | brain's copy |
@@ -147,14 +147,20 @@ also has none by design (Crossplane creates it; see the comment in
 
 ## Unsubstituted `${...}` variables
 
-These render literally (e.g. `${client_id}`) unless the Flux
+These render literally (e.g. `${ssint_main_tunnel_id}`) unless the Flux
 `Kustomization` that owns this repo sets `postBuild.substituteFrom`
 pointing at the Secrets/ConfigMaps below:
 
 | Variable | Used in | Sourced from |
 |---|---|---|
-| `${client_id}` | `10-cloudflare/zero-trust.yaml` (`TrustAccessIdentityProvider/cf-main-idp-ssint-sso`) | `Secret/ssint-main-g-idp-id` (`flux-system`, key `client_id`) |
 | `${ssint_main_tunnel_id}` | `10-cloudflare/zero-trust.yaml` (`TrustTunnelCloudflaredConfig/ssint-main-tunnel-config`, `Record/info-simplesalt-company`) | `Secret/ssint-main-tunnel-id` (`flux-system`, key `ssint_main_tunnel_id`), patched by the `fetch-ssint-main-tunnel-id` Job in `10-cloudflare/tunnel.yaml` once the tunnel is Ready |
+
+`${client_id}` was previously listed here, sourced from a `flux-system`
+placeholder Secret. It has been removed: `clientId` on
+`TrustAccessIdentityProvider/cf-main-idp-ssint-sso` is now an inlined
+literal (a GCP OAuth2 client_id is a public identifier, not credential
+material — simplesalt/projects#235, simplesalt/projects#236), and the
+placeholder Secret was deleted.
 
 Without `postBuild.substituteFrom` wired up on the owning Kustomization,
 `ssint-main-tunnel-config` reconciles with the literal string
@@ -175,8 +181,7 @@ resources that depend on them can reconcile:
 | `ssint-main-cf` | `crossplane-system` | Raw Cloudflare API token, key `api_token`. The `assemble-cloudflare-credentials-main` Job (`10-cloudflare/creds-job.yaml`) reads this and writes the JSON-wrapped form into `cloudflare-credentials-main`. |
 | `cloudflare-credentials-main` | `crossplane-system` | Written by the Job above — indirect, but still ultimately out-of-band via `ssint-main-cf`. |
 | `gcp-credentials` | `crossplane-system` | JSON GCP service-account key patched directly into the `credentials` key (no assembler Job by design): `kubectl patch secret gcp-credentials -n crossplane-system --type=merge -p '{"data":{"credentials":"<base64 key.json>"}}'` |
-| `ssint-main-g-idp-id` | `flux-system` | Google OAuth client ID, key `client_id`, patched manually after creating the OAuth2 client in GCP Console. |
-| `ssint-main-g-idp-secret` | `crossplane-system` | Google OAuth client secret, key `client_secret`, same OAuth2 client. |
+| `ssint-main-g-idp-secret` | `crossplane-system` | Google OAuth client secret, key `client_secret`, for the OAuth2 client created per the operator steps in `10-cloudflare/zero-trust.yaml`. |
 | `ss-acme-cf-token` | `cert-manager` | Cloudflare API token scoped for DNS-01 challenges on `simplesalt.company`, key `api-token`. |
 
 `ssint-main-tunnel-id` (`flux-system`) and `ssint-main-tunnel-token`
