@@ -1,0 +1,32 @@
+# The namespace every other object in this directory lands in.
+#
+# Declared here because nothing else creates it. It was previously a
+# pre-existing artifact of the base-stack cluster, so the dependency stayed
+# invisible until this repo was bootstrapped onto a fresh cluster, where the
+# Kustomization fails immediately and permanently:
+#
+#   Role/cluster-named-routing/ssint-main-tunnel-token-patcher not found:
+#   namespaces "cluster-named-routing" not found
+#
+# The `install.createNamespace: true` on the cloudflared-main HelmRelease
+# (tunnel-daemon.yaml) does NOT cover this. Helm only creates the namespace
+# when it installs the release, and the release is never reconciled because the
+# Kustomization fails applying the Role and RoleBinding first — so the
+# namespace has to exist before Flux applies this directory, not during it.
+#
+# No pod-security labels: cloudflared runs unprivileged, so this namespace does
+# not need the `privileged` enforcement that e.g. cluster-named-dns requires
+# for pihole's port-53 bind. Add them only if something here starts needing it.
+#
+# NOTE: `cluster-named-routing` is a cluster-specific name carried over from
+# base-stack unchanged; see the note in tunnel-daemon.yaml and
+# simplesalt/projects#216 if a naming convention for the new cluster is settled.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cluster-named-routing
+  labels:
+    name: cluster-named-routing
+    entity: cluster
+    env: named
+    capability: routing
