@@ -2,14 +2,21 @@
 
 Cloudflare and Google Workspace/GCP Crossplane resources for the SimpleSalt
 proprietary account set (`ssint-main` account `ba92fe12c6c1275f965c7c86e3b392ac`,
-GCP project `internalapps-481018`). Intended to be delivered via a Flux
-`Kustomization` (and, upstream, a `FluxInstance`) as part of a larger
-cluster stack, with Crossplane providers supplied by `simplesalt/basis`.
+GCP project `internalapps-481018`). Intended to be delivered via a chain of
+Flux `Kustomization`s (and, upstream, a `FluxInstance`) as part of a larger
+cluster stack.
 
-This repo holds **managed resources only** — the Crossplane provider
-*installation* (`Provider`, `DeploymentRuntimeConfig`, provider CRDs) is
-explicitly out of scope and stays in `simplesalt/basis` (`cf-providers.yaml`,
-`cf-runtime.yaml`, `gcp-providers.yaml`, `gcp-runtime.yaml`).
+This repo now installs Crossplane itself (simplesalt/projects#567): the
+`crossplane-system` namespace, the `crossplane-stable` Helm chart source,
+and the `crossplane` `HelmRelease`. It also installs the six Cloudflare and
+GCP `Provider` packages it consumes, their two `DeploymentRuntimeConfig`s,
+and the CRD-watch `ClusterRole` they need — all moved here from
+`simplesalt/basis` (`operators/ns.yaml`, `operators/helmrepos.yaml`,
+`operators/controllers.yaml`, `platform/cf-providers.yaml`,
+`platform/cf-runtime.yaml`, `platform/gcp-providers.yaml`,
+`platform/gcp-runtime.yaml`). Everything is applied in three ordered stages
+so a fresh cluster never has one build holding both a CRD-installing object
+and objects of the kinds it installs — see "Layout and ordering" below.
 
 ## Provenance
 
@@ -49,9 +56,14 @@ simplesalt/projects#182, which is closed and unused).
 ## Layout and ordering
 
 ```
-00-providers/   ProviderConfig(s) + backing credential Secret for the ssint-main Cloudflare account
-10-cloudflare/  ssint-main Cloudflare account: R2, KV, tunnel
-quarantine/     known-broken manifest, deliberately excluded from any build
+kustomization.yaml     root: lists only stages.yaml
+stages.yaml            three Flux Kustomizations — the stage chain (below)
+00-crossplane/         stage 1: Crossplane itself (namespace, chart source, HelmRelease)
+10-providers/          stage 2: the Cloudflare/GCP Provider packages + runtime configs
+20-resources/          stage 3: managed resources
+  provider-configs/    ProviderConfig(s) + backing credential Secret for the ssint-main Cloudflare account
+  cloudflare/          ssint-main Cloudflare account: R2, KV, tunnel
+quarantine/            known-broken manifest, deliberately excluded from any build
 ```
 
 `20-gcp/` (GCP SSO/SCIM support resources) and `30-certs/` (cert-manager
@@ -60,30 +72,78 @@ quarantine/     known-broken manifest, deliberately excluded from any build
 one `simplesalt/brain` already declares, and brain is the canonical owner
 going forward. See "The dedupe" below.
 
-**Ordering constraint:** `ProviderConfig/ssint-main` (both the namespaced
-`upjet-cloudflare.m.upbound.io` and cluster-scoped
-`upjet-cloudflare.upbound.io` variants) and its backing Secret
-(`cloudflare-credentials-main`) must be reconciled before any managed
-resource in `10-cloudflare/` that references it via `providerConfigRef`.
-They are isolated in `00-providers/`, listed first in the root
-`kustomization.yaml`, specifically so this is visible from a file listing.
-A flat `kustomize build .` does not itself guarantee apply order under
-Flux's server-side apply within a single Kustomization — if the Crossplane
-provider CRDs/ProviderConfigs are not already installed and healthy on the
-target cluster before this Kustomization's first reconcile, split this into
-a `dependsOn` chain (e.g. `ss-cloud-basis-providers` → `ss-cloud-basis`)
-rather than relying on file order alone.
+**The stage chain (simplesalt/projects#567):**
+
+```
+ss-basis-operators → ss-cloud-basis-crossplane → ss-cloud-basis-providers → ss-cloud-basis-resources
+```
+
+- `ss-basis-operators` is `simplesalt/basis`'s own Kustomization (not in this
+  repo) — Kyverno and the scheduling mutation it installs are up before
+  anything here starts.
+- `ss-cloud-basis-crossplane` (`00-crossplane/`) installs Crossplane. It
+  waits on the `crossplane` `HelmRelease` being Ready, *and* on the
+  `providers.pkg.crossplane.io` and `deploymentruntimeconfigs.pkg.crossplane.io`
+  CRDs being Established — Crossplane's init creates those CRDs without
+  waiting for them, so the HelmRelease alone does not guarantee stage 2 can
+  apply.
+- `ss-cloud-basis-providers` (`10-providers/`) installs the six `Provider`
+  packages and their runtime configs. It waits on all six Providers being
+  both `Installed` and `Healthy` — a `Provider` has no `Ready` condition, so
+  this uses a `healthCheckExprs` CEL expression rather than a plain
+  `healthChecks` entry (which would treat the object as healthy the moment
+  it exists). There is deliberately no `failed` expression: a provider that
+  is briefly unhealthy while starting is waited for, not failed fast.
+- `ss-cloud-basis-resources` (`20-resources/`) applies the managed
+  resources — `ProviderConfig`s and everything that references them via
+  `providerConfigRef`. It has no `healthChecks` of its own; it only needs
+  stage 2's Providers to be installed first.
+
+The chain exists because a single flat build holding a `Provider` (or
+Crossplane's own CRDs) together with objects of the kinds it installs fails
+dry-run on a fresh cluster and never applies — `kustomize build .`'s file
+order is not an apply-order guarantee under Flux's server-side apply, so the
+guarantee has to come from `dependsOn` + `healthChecks`/`healthCheckExprs`
+instead. See `stages.yaml` for the full spec of all three Kustomizations.
+
+**`deletionPolicy: Orphan`:** all three stage Kustomizations set this
+(the Flux default, `MirrorPrune`, would delete a removed stage's objects). If
+this parent build ever drops or renames a stage, the stage's objects are
+orphaned — Flux stops managing them but never deletes them. Between the three stages that protects the production
+Cloudflare tunnel, the R2 backup bucket, and `crossplane-system` itself
+(deleting it would take every `Provider` and managed resource in the
+cluster with it) from a structural refactor of this repo.
+
+**Every object in every stage also carries its own**
+**`kustomize.toolkit.fluxcd.io/prune: disabled`.** This is a second,
+independent guard, not a duplicate of `deletionPolicy: Orphan`: it protects
+against prune during the ownership handoff from `simplesalt/basis` to this
+repo specifically. While both repos declare an object, each Flux apply
+stamps its own Kustomization's name into the `kustomize.toolkit.fluxcd.io/name`
+owner label, so the label flips to whichever applied last and cannot be
+relied on to stop a prune while ownership is moving — only the annotation
+can, since every copy carries it regardless of who applied last.
 
 ## Naming conventions for the consuming cluster config
 
-This repo does not itself contain Flux `GitRepository`/`Kustomization`
-objects (those live in the cluster bootstrap config, out of scope for this
-task). When wiring this repo into a cluster: the `GitRepository` should be
-named `ss-cloud-basis`, and any `Kustomization`s that reference it should
-be named `ss-cloud-basis-*`, per SimpleSalt's `<entity>-<clustername>-<capability>`
-convention (entity prefix `ss`). The Crossplane providers this repo depends
-on come from `simplesalt/basis`; use `dependsOn: basis` (or
-`ss-basis`, matching whatever that repo's Kustomization is actually named).
+This repo now contains its own child `Kustomization`s (`stages.yaml`) — the
+`00-crossplane`/`10-providers`/`20-resources` chain is entirely internal to
+this repo and needs no wiring from the consuming cluster config. What still
+lives outside this repo, in the cluster bootstrap config, is the top-level
+`GitRepository` and the top-level `Kustomization` that points at this repo's
+root (`ss-cloud-basis`, path `./`) — per SimpleSalt's
+`<entity>-<clustername>-<capability>` convention (entity prefix `ss`), same
+as before.
+
+The top-level `ss-cloud-basis` Kustomization still depends on `ss-basis` (or
+whatever `simplesalt/basis`'s top-level Kustomization is actually named) —
+that dependency is unchanged. What's new is that stage 1
+(`ss-cloud-basis-crossplane`) *also* depends directly on
+`ss-basis-operators` rather than only transitively through `ss-basis`:
+`ss-basis` does not wait for its own children (`ss-basis-operators`,
+`ss-basis-platform`) to be Ready, only for them to exist, so depending on
+`ss-basis` alone would not guarantee Kyverno and the scheduling mutation are
+actually up before this repo's own Crossplane install starts.
 
 ## The dedupe
 
@@ -140,7 +200,7 @@ that remains in this repo references a name that now only exists in `brain`.
 **`${ssint_main_tunnel_id}`:** its only two consumers in this repo,
 `TrustTunnelCloudflaredConfig/ssint-main-tunnel-config` and
 `Record/info-simplesalt-company`, were both removed (both lived in
-`10-cloudflare/zero-trust.yaml`). `10-cloudflare/tunnel.yaml`'s
+`10-cloudflare/zero-trust.yaml`). `cloudflare/tunnel.yaml`'s
 `fetch-ssint-main-tunnel-id` Job still *produces* the value (patches
 `Secret/ssint-main-tunnel-id` in `flux-system`, key `ssint_main_tunnel_id`),
 but as of this change **no manifest in `cloud-basis` consumes it** — the
@@ -232,7 +292,7 @@ discrepancy note above. `TrustAccessApplication/cloudflare-app-appflowy-main`
 above. **No manifest in this repo references `${ssint_main_tunnel_id}`
 anymore**; the substitution requirement has left this repo (it may still
 apply to `simplesalt/brain`'s copies of those objects, out of scope here).
-`10-cloudflare/tunnel.yaml`'s `fetch-ssint-main-tunnel-id` Job still patches
+`cloudflare/tunnel.yaml`'s `fetch-ssint-main-tunnel-id` Job still patches
 `Secret/ssint-main-tunnel-id` (`flux-system`, key `ssint_main_tunnel_id`)
 with the live tunnel ID, but that value currently has no in-repo consumer.
 This also means the failure mode simplesalt/projects#235 flagged
@@ -256,7 +316,7 @@ resources that depend on them can reconcile:
 
 | Secret | Namespace | Populated how |
 |---|---|---|
-| `ssint-main-cf` | `crossplane-system` | Raw Cloudflare API token, key `api_token`. The `assemble-cloudflare-credentials-main` Job (`10-cloudflare/creds-job.yaml`) reads this and writes the JSON-wrapped form into `cloudflare-credentials-main`. |
+| `ssint-main-cf` | `crossplane-system` | Raw Cloudflare API token, key `api_token`. The `assemble-cloudflare-credentials-main` Job (`cloudflare/creds-job.yaml`) reads this and writes the JSON-wrapped form into `cloudflare-credentials-main`. |
 | `cloudflare-credentials-main` | `crossplane-system` | Written by the Job above — indirect, but still ultimately out-of-band via `ssint-main-cf`. |
 
 `gcp-credentials`, `ssint-main-g-idp-secret`, and `ss-acme-cf-token` were
@@ -267,7 +327,7 @@ against `simplesalt/brain`'s copies instead.
 `ssint-main-tunnel-id` (`flux-system`) and `ssint-main-tunnel-token`
 (`cluster-named-routing`) are also empty placeholders at apply time, but
 those ARE self-populating via in-repo Jobs (`fetch-ssint-main-tunnel-id`,
-`fetch-ssint-main-tunnel-token` in `10-cloudflare/tunnel.yaml` /
+`fetch-ssint-main-tunnel-token` in `cloudflare/tunnel.yaml` /
 `tunnel-token-job.yaml`) once `TrustTunnelCloudflared/ssint-main-tunnel` is
 Ready, so they aren't "out-of-band" in the same sense.
 
@@ -298,9 +358,9 @@ following references to the *current* cluster were carried over unchanged
 because inventing a new name is out of scope, and should be revisited once
 the new cluster's naming convention is set:
 
-- `10-cloudflare/tunnel-daemon.yaml`: `namespace: cluster-named-routing`
+- `cloudflare/tunnel-daemon.yaml`: `namespace: cluster-named-routing`
   (`HelmRelease/cloudflared-main`'s target namespace).
-- `10-cloudflare/tunnel.yaml`: `namespace: cluster-named-routing` (tunnel
+- `cloudflare/tunnel.yaml`: `namespace: cluster-named-routing` (tunnel
   run-token connection secret) and RBAC in `flux-system`.
 
 The tunnel ingress service target
@@ -311,16 +371,39 @@ hardcoded reference now only exists in `brain`.
 
 ## Validation
 
-Validated locally with `kustomize build .` using kustomize v5.4.3 — see the
-task report for full output. Zero duplicate `kind`/`namespace`/`name`
-tuples confirmed across the whole repo (and none shared with
-`simplesalt/brain`, per simplesalt/projects#226).
+Validated locally with `kustomize build .` (kustomize v5.7.1), per-stage:
+
+- Root `kustomize build .` renders exactly the three stage `Kustomization`s
+  in `stages.yaml`, correctly ordered/configured (`dependsOn`, `healthChecks`,
+  `healthCheckExprs`, `deletionPolicy: Orphan`, `prune: true`).
+- `kustomize build 00-crossplane`, `kustomize build 10-providers`, and
+  `kustomize build 20-resources` each build cleanly; their kinds fall
+  entirely within the expected apiGroups per stage (stage 1: core,
+  `source.toolkit.fluxcd.io`, `helm.toolkit.fluxcd.io`; stage 2:
+  `pkg.crossplane.io`, `rbac.authorization.k8s.io`; stage 3: core,
+  `rbac.authorization.k8s.io`, `batch`, `helm.toolkit.fluxcd.io`, and the
+  `*.upbound.io` Crossplane-managed-resource groups) — confirming no stage
+  mixes a CRD-installing object with objects of the kinds it installs.
+- `kustomize build 20-resources` renders the same 27 objects, JSON-identical,
+  as `kustomize build .` did at the pre-split commit (simplesalt/projects#567)
+  — the split changed nothing about what the managed-resources stage applies.
+- The twelve objects moved from `simplesalt/basis` (three in `00-crossplane/`,
+  nine in `10-providers/`) render identical, as JSON with sorted keys, to the
+  same objects built from `simplesalt/basis` `operators/` and `platform/` at
+  the commit they were copied from (simplesalt/projects#567) — the move
+  changed nothing about the objects themselves.
+- All 39 objects across the three stage builds carry
+  `kustomize.toolkit.fluxcd.io/prune: disabled`.
+- Zero duplicate `kind`/`namespace`/`name` tuples confirmed across the whole
+  repo (and none shared with `simplesalt/brain`, per simplesalt/projects#226).
 
 ## Explicitly out of scope
 
-- Crossplane *installation* (`Provider`, runtime config, CRDs) — stays in
-  `simplesalt/basis` (`cf-providers.yaml`, `cf-runtime.yaml`,
-  `gcp-providers.yaml`, `gcp-runtime.yaml`).
+- The Cloudflare provider family package
+  (`wildbitca-provider-family-cloudflare`) is still installed implicitly as
+  a dependency of the four `provider-cloudflare-*` packages in
+  `10-providers/cf-providers.yaml`; its version is not pinned here
+  (Crossplane resolves it itself).
 - Personal `evans-home` account resources (`Secret/cloudflare-credentials`,
   `ProviderConfig/default` x2, `Bucket/ss-testing`, the personal
   creds-assembler Job) — go to `dylannevans/basis:cloud/`

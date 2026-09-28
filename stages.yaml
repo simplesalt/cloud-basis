@@ -1,0 +1,88 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ss-cloud-basis-crossplane
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./00-crossplane
+  prune: true
+  deletionPolicy: Orphan
+  sourceRef:
+    kind: GitRepository
+    name: ss-cloud-basis
+  dependsOn:
+    - name: ss-basis-operators
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: crossplane
+      namespace: crossplane-system
+    - apiVersion: apiextensions.k8s.io/v1
+      kind: CustomResourceDefinition
+      name: providers.pkg.crossplane.io
+    - apiVersion: apiextensions.k8s.io/v1
+      kind: CustomResourceDefinition
+      name: deploymentruntimeconfigs.pkg.crossplane.io
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ss-cloud-basis-providers
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./10-providers
+  prune: true
+  deletionPolicy: Orphan
+  sourceRef:
+    kind: GitRepository
+    name: ss-cloud-basis
+  dependsOn:
+    - name: ss-cloud-basis-crossplane
+  healthChecks:
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: provider-cloudflare-dns
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: provider-cloudflare-workers
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: provider-cloudflare-r2
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: provider-cloudflare-zero
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: upbound-provider-family-gcp
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      name: provider-gcp-cloudplatform
+  healthCheckExprs:
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      current: status.conditions.exists(e, e.type == 'Installed' && e.status == 'True') && status.conditions.exists(e, e.type == 'Healthy' && e.status == 'True')
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ss-cloud-basis-resources
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./20-resources
+  prune: true
+  deletionPolicy: Orphan
+  sourceRef:
+    kind: GitRepository
+    name: ss-cloud-basis
+  dependsOn:
+    - name: ss-cloud-basis-providers

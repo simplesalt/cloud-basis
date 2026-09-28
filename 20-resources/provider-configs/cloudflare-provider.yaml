@@ -10,7 +10,7 @@
 # providerConfigRef.name: ssint-main.
 #
 # cloudflare-credentials-main is populated out-of-band by the
-# assemble-cloudflare-credentials-main Job (10-cloudflare/creds-job.yaml),
+# assemble-cloudflare-credentials-main Job (../cloudflare/creds-job.yaml),
 # which reads the raw API token from Secret/ssint-main-cf and writes the
 # JSON-wrapped {"api_token":"..."} form here. On a fresh cluster this Secret
 # is EMPTY until that Job runs and ssint-main-cf has been populated

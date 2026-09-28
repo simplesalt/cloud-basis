@@ -6,7 +6,7 @@
 # Record/info-simplesalt-company) are owned by simplesalt/brain
 # (manifests/cloudflare-zero-trust-main.yaml) and are deliberately NOT
 # declared in this repo — see README.md "The dedupe" (simplesalt/projects#226).
-# This repo previously carried a duplicate copy in 10-cloudflare/zero-trust.yaml;
+# This repo previously carried a duplicate copy in cloudflare/zero-trust.yaml;
 # that file was removed as part of the dedupe.
 #
 # HelmRelease stays here as generic tunnel-daemon plumbing (no
