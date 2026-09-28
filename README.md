@@ -200,7 +200,7 @@ that remains in this repo references a name that now only exists in `brain`.
 **`${ssint_main_tunnel_id}`:** its only two consumers in this repo,
 `TrustTunnelCloudflaredConfig/ssint-main-tunnel-config` and
 `Record/info-simplesalt-company`, were both removed (both lived in
-`10-cloudflare/zero-trust.yaml`). `cloudflare/tunnel.yaml`'s
+`10-cloudflare/zero-trust.yaml`). `20-resources/cloudflare/tunnel.yaml`'s
 `fetch-ssint-main-tunnel-id` Job still *produces* the value (patches
 `Secret/ssint-main-tunnel-id` in `flux-system`, key `ssint_main_tunnel_id`),
 but as of this change **no manifest in `cloud-basis` consumes it** — the
@@ -292,7 +292,7 @@ discrepancy note above. `TrustAccessApplication/cloudflare-app-appflowy-main`
 above. **No manifest in this repo references `${ssint_main_tunnel_id}`
 anymore**; the substitution requirement has left this repo (it may still
 apply to `simplesalt/brain`'s copies of those objects, out of scope here).
-`cloudflare/tunnel.yaml`'s `fetch-ssint-main-tunnel-id` Job still patches
+`20-resources/cloudflare/tunnel.yaml`'s `fetch-ssint-main-tunnel-id` Job still patches
 `Secret/ssint-main-tunnel-id` (`flux-system`, key `ssint_main_tunnel_id`)
 with the live tunnel ID, but that value currently has no in-repo consumer.
 This also means the failure mode simplesalt/projects#235 flagged
@@ -316,7 +316,7 @@ resources that depend on them can reconcile:
 
 | Secret | Namespace | Populated how |
 |---|---|---|
-| `ssint-main-cf` | `crossplane-system` | Raw Cloudflare API token, key `api_token`. The `assemble-cloudflare-credentials-main` Job (`cloudflare/creds-job.yaml`) reads this and writes the JSON-wrapped form into `cloudflare-credentials-main`. |
+| `ssint-main-cf` | `crossplane-system` | Raw Cloudflare API token, key `api_token`. The `assemble-cloudflare-credentials-main` Job (`20-resources/cloudflare/creds-job.yaml`) reads this and writes the JSON-wrapped form into `cloudflare-credentials-main`. |
 | `cloudflare-credentials-main` | `crossplane-system` | Written by the Job above — indirect, but still ultimately out-of-band via `ssint-main-cf`. |
 
 `gcp-credentials`, `ssint-main-g-idp-secret`, and `ss-acme-cf-token` were
@@ -327,7 +327,7 @@ against `simplesalt/brain`'s copies instead.
 `ssint-main-tunnel-id` (`flux-system`) and `ssint-main-tunnel-token`
 (`cluster-named-routing`) are also empty placeholders at apply time, but
 those ARE self-populating via in-repo Jobs (`fetch-ssint-main-tunnel-id`,
-`fetch-ssint-main-tunnel-token` in `cloudflare/tunnel.yaml` /
+`fetch-ssint-main-tunnel-token` in `20-resources/cloudflare/tunnel.yaml` /
 `tunnel-token-job.yaml`) once `TrustTunnelCloudflared/ssint-main-tunnel` is
 Ready, so they aren't "out-of-band" in the same sense.
 
@@ -358,9 +358,9 @@ following references to the *current* cluster were carried over unchanged
 because inventing a new name is out of scope, and should be revisited once
 the new cluster's naming convention is set:
 
-- `cloudflare/tunnel-daemon.yaml`: `namespace: cluster-named-routing`
+- `20-resources/cloudflare/tunnel-daemon.yaml`: `namespace: cluster-named-routing`
   (`HelmRelease/cloudflared-main`'s target namespace).
-- `cloudflare/tunnel.yaml`: `namespace: cluster-named-routing` (tunnel
+- `20-resources/cloudflare/tunnel.yaml`: `namespace: cluster-named-routing` (tunnel
   run-token connection secret) and RBAC in `flux-system`.
 
 The tunnel ingress service target
