@@ -62,7 +62,7 @@ stages.yaml            three Flux Kustomizations — the stage chain (below)
 10-providers/          stage 2: the Cloudflare/GCP Provider packages + runtime configs
 20-resources/          stage 3: managed resources
   provider-configs/    ProviderConfig(s) + backing credential Secret for the ssint-main Cloudflare account
-  cloudflare/          ssint-main Cloudflare account: R2, KV, tunnel
+  cloudflare/          ssint-main Cloudflare account: R2, KV, DNS, tunnel
 quarantine/            known-broken manifest, deliberately excluded from any build
 ```
 

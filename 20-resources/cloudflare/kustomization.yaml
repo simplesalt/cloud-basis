@@ -9,6 +9,7 @@ resources:
   - namespace.yaml
   - r2.yaml
   - kv.yaml
+  - dns.yaml
   - tunnel.yaml
   - tunnel-token-job.yaml
   - tunnel-daemon.yaml
