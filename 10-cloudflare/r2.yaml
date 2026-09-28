@@ -8,6 +8,7 @@ metadata:
   namespace: crossplane-system
   annotations:
     crossplane.io/external-name: backups
+    kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     entity: cluster
     capability: infra

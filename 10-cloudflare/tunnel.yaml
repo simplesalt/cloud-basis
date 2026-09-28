@@ -25,6 +25,7 @@ metadata:
   name: ssint-main-tunnel
   annotations:
     crossplane.io/external-name: "83c27a64-4074-474c-9a8f-19448d1c2081"
+    kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     entity: cluster
     capability: infra
@@ -58,6 +59,7 @@ metadata:
     capability: infra
   annotations:
     kustomize.toolkit.fluxcd.io/ssa: merge
+    kustomize.toolkit.fluxcd.io/prune: disabled
 type: Opaque
 ---
 # RBAC for the tunnel-ID injection Job.
@@ -69,6 +71,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 rules:
   - apiGroups: ["zero.upjet-cloudflare.upbound.io"]
     resources: [trusttunnelcloudflareds]
@@ -83,6 +87,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -91,6 +97,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 subjects:
   - kind: ServiceAccount
     name: ssint-main-tunnel-id-injector
@@ -109,6 +117,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 rules:
   - apiGroups: [""]
     resources: [secrets]
@@ -123,6 +133,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 subjects:
   - kind: ServiceAccount
     name: ssint-main-tunnel-id-injector
@@ -143,6 +155,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 8

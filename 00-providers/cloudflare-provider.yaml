@@ -25,6 +25,7 @@ metadata:
     capability: infra
   annotations:
     kustomize.toolkit.fluxcd.io/ssa: merge
+    kustomize.toolkit.fluxcd.io/prune: disabled
 type: Opaque
 ---
 apiVersion: upjet-cloudflare.m.upbound.io/v1beta1
@@ -35,6 +36,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   credentials:
     source: Secret
@@ -53,6 +56,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   credentials:
     source: Secret

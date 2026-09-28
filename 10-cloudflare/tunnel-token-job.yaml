@@ -22,6 +22,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 ---
 # ClusterRole: read the TrustTunnelCloudflared CR (cluster-scoped resource)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -31,6 +33,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 rules:
   - apiGroups: ["zero.upjet-cloudflare.upbound.io"]
     resources: [trusttunnelcloudflareds]
@@ -44,6 +48,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 subjects:
   - kind: ServiceAccount
     name: ssint-main-tunnel-token-fetcher
@@ -62,6 +68,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 rules:
   - apiGroups: [""]
     resources: [secrets]
@@ -76,6 +84,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 subjects:
   - kind: ServiceAccount
     name: ssint-main-tunnel-token-fetcher
@@ -93,6 +103,8 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 8

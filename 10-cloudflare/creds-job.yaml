@@ -6,6 +6,8 @@ metadata:
   labels:
     entity: cluster
     capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -15,6 +17,8 @@ metadata:
   labels:
     entity: cluster
     capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 rules:
   - apiGroups: [""]
     resources: [secrets]
@@ -33,6 +37,8 @@ metadata:
   labels:
     entity: cluster
     capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 subjects:
   - kind: ServiceAccount
     name: cloudflare-main-creds-assembler
@@ -55,6 +61,7 @@ metadata:
     capability: access
   annotations:
     kustomize.toolkit.fluxcd.io/ssa: merge
+    kustomize.toolkit.fluxcd.io/prune: disabled
 type: Opaque
 ---
 # Reads ssint-main-cf and assembles {"api_token":"..."} into
@@ -68,6 +75,8 @@ metadata:
   labels:
     entity: cluster
     capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 8

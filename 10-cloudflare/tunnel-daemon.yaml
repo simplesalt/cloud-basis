@@ -29,6 +29,8 @@ metadata:
     app.kubernetes.io/name: cloudflared-main
     app.kubernetes.io/part-of: routing
     app.kubernetes.io/component: tunnel
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   targetNamespace: cluster-named-routing
   interval: 5m
