@@ -29,8 +29,6 @@ metadata:
 spec:
   managementPolicies:
     - Observe
-    - Create
-    - Update
   forProvider:
     accountId: ba92fe12c6c1275f965c7c86e3b392ac
     scriptName: main-dux-soup-event-handler
