@@ -166,6 +166,8 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     if (error instanceof Error && error.name === 'AuthorizationError') {
       return renderAuthorizationError(error);
     }
+    // Never the code, verifier or secret: only what went wrong, for Workers Logs.
+    console.error('oauth callback failed:', error instanceof Error ? `${error.name}: ${error.message}` : String(error));
     return new Response('Sign-in with the identity provider failed.', { status: 502 });
   }
 }

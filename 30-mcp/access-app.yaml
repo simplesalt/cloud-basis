@@ -6,7 +6,8 @@
 # takes no `kind`, since this group's ProviderConfig is already cluster-scoped).
 #
 # The provider writes the generated OIDC client secret to
-# crossplane-system/mcp-server-access-oidc, key saas_app.client_secret.
+# crossplane-system/mcp-server-access-oidc, key attribute.saas_app.client_secret
+# (upjet prefixes every sensitive Terraform attribute with "attribute.").
 # Allow policy is inline (decision/include/precedence directly on this
 # object) rather than a separate TrustAccessPolicy — the CRD supports both a
 # by-id reference and an inline definition per policies[] entry; this is not

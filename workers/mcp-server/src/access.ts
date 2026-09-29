@@ -71,7 +71,8 @@ export async function exchangeCodeForEmail(params: ExchangeParams): Promise<Exch
     body: body.toString(),
   });
   if (!response.ok) {
-    throw new Error(`Access token exchange failed with status ${response.status}`);
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Access token exchange failed with status ${response.status}: ${detail.slice(0, 200)}`);
   }
 
   const tokens = (await response.json()) as { id_token?: unknown };

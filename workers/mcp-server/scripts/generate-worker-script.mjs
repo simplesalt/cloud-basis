@@ -148,6 +148,16 @@ spec:
     compatibilityFlags:
       - global_fetch_strictly_public
     content: ${yamlDoubleQuoted(terraformLiteral(content))}
+    # Exactly the block Cloudflare reports back, so the provider sees no
+    # difference and does not re-upload on every reconcile.
+    observability:
+      enabled: true
+      headSamplingRate: 1
+      logs:
+        enabled: true
+        headSamplingRate: 1
+        invocationLogs: true
+        persist: true
     bindings:
 ${indent(
   `- name: OAUTH_KV
@@ -157,7 +167,7 @@ ${indent(
   type: secret_text
   textSecretRef:
     name: mcp-server-access-oidc
-    key: saas_app.client_secret
+    key: attribute.saas_app.client_secret
 - name: COOKIE_ENCRYPTION_KEY
   type: secret_text
   textSecretRef:
