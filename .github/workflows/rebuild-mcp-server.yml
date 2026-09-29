@@ -1,0 +1,80 @@
+name: Rebuild MCP server Worker
+
+# Flux only ever applies 30-mcp/worker-script.yaml; it never looks at
+# workers/mcp-server/src. Locally, keeping the two in sync is opt-in (the
+# .githooks/pre-commit hook), so a source change pushed without that hook
+# installed would otherwise never reach Cloudflare. This runs the same
+# build GitHub-side and commits the result back to main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/mcp-server/**'
+      - '30-mcp/worker-script.yaml'
+  workflow_dispatch:
+
+# Serializes runs so two builds can't race to push. Queued rather than
+# cancelled: every run checks out main's latest head before building, so a
+# queued run finishing just means one extra, harmless rebuild.
+concurrency:
+  group: rebuild-mcp-server-worker
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main at its latest head
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # Pinned to the same version build.sh falls back to when `node` isn't
+      # on PATH, so the build runs on an identical Node here and locally.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+          cache: npm
+          cache-dependency-path: workers/mcp-server/package-lock.json
+
+      - name: Build the Worker bundle and manifest
+        working-directory: workers/mcp-server
+        run: ./build.sh
+
+      - name: Commit and push the rebuilt manifest
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Commits made with the default GITHUB_TOKEN don't retrigger
+          # workflow runs, so this push can never start a rebuild loop
+          # against itself. On a rejected push, start over from the new
+          # main and rebuild, so the commit always sits on top of the
+          # newest source and never rewrites anyone else's commit.
+          max_attempts=5
+          for attempt in $(seq 1 "$max_attempts"); do
+            if git diff --quiet -- 30-mcp/worker-script.yaml; then
+              echo "30-mcp/worker-script.yaml already matches the built source; nothing to commit."
+              exit 0
+            fi
+            git add 30-mcp/worker-script.yaml
+            git commit -m "build(cloud-basis): rebuild the MCP server Worker from source"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq "$max_attempts" ]]; then
+              echo "::error::push to main failed after $max_attempts attempts" >&2
+              exit 1
+            fi
+            echo "push rejected (attempt $attempt/$max_attempts); rebuilding on the new main" >&2
+            git fetch origin main
+            git reset --hard origin/main
+            (cd workers/mcp-server && ./build.sh)
+          done
