@@ -1,0 +1,52 @@
+# Cloudflare Access for SaaS OIDC application fronting the MCP server's
+# sign-in flow. Cluster-scoped zero.upjet-cloudflare.upbound.io variant,
+# matching what the live cluster already uses for Zero Trust objects
+# (verified against TrustAccessApplication/cloudflare-app-info-simplesalt-company,
+# owned by simplesalt/brain, via the flux MCP — providerConfigRef there also
+# takes no `kind`, since this group's ProviderConfig is already cluster-scoped).
+#
+# The provider writes the generated OIDC client secret to
+# crossplane-system/mcp-server-access-oidc, key saas_app.client_secret.
+# Allow policy is inline (decision/include/precedence directly on this
+# object) rather than a separate TrustAccessPolicy — the CRD supports both a
+# by-id reference and an inline definition per policies[] entry; this is not
+# referencing an existing policy, so no `id` is set.
+
+apiVersion: zero.upjet-cloudflare.upbound.io/v1alpha1
+kind: TrustAccessApplication
+metadata:
+  name: main-mcp-server-signin
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: access
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: main-mcp-server-signin
+    type: saas
+    saasApp:
+      authType: oidc
+      redirectUris:
+        - https://r4x69awbkkotgfs44cmd.simplesalt.company/oauth/callback
+      grantTypes:
+        - authorization_code_with_pkce
+      scopes:
+        - openid
+        - email
+        - profile
+    policies:
+      - name: main-mcp-server-signin-allow
+        decision: allow
+        precedence: 1
+        include:
+          - email:
+              email: admin@simplesalt.company
+          - email:
+              email: dylan.evans@simplesalt.company
+  providerConfigRef:
+    name: ssint-main
+  writeConnectionSecretToRef:
+    name: mcp-server-access-oidc
+    namespace: crossplane-system

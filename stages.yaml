@@ -86,3 +86,25 @@ spec:
     name: ss-cloud-basis
   dependsOn:
     - name: ss-cloud-basis-providers
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ss-cloud-basis-mcp
+  namespace: flux-system
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./30-mcp
+  prune: true
+  deletionPolicy: Orphan
+  sourceRef:
+    kind: GitRepository
+    name: ss-cloud-basis
+  dependsOn:
+    - name: ss-cloud-basis-resources
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: mcp-server-generated

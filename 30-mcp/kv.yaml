@@ -1,0 +1,20 @@
+# KV namespace backing the MCP server's OAuth state (ssint-main Cloudflare
+# account). Created, not adopted — no crossplane.io/external-name annotation.
+
+apiVersion: workers.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: KvNamespace
+metadata:
+  name: cf-main-kv-mcp-server-oauth
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    title: main-mcp-server-oauth
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main
