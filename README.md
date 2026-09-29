@@ -441,6 +441,13 @@ field. So these three values are held in a plaintext, git-committed Secret
 (`dux-soup-event-handler-config`) purely to satisfy that shape, not because
 they're sensitive.
 
+**`observability` is spelled out in full on purpose.** The provider treats
+`observability` and its `logs` as plain optional fields and reads back
+everything Cloudflare returns, so a spec that sets only `enabled: true`
+never matches and the provider re-uploads the Worker every few seconds
+(it did on 2026-09-29, until commit eac37ec paused updates). Keep the spec
+equal to what `status.atProvider.observability` shows.
+
 **The `Script` deliberately carries no `migrations`.** The `EventOutbox`
 Durable Object class was created on 2026-09-29 by a one-off
 `migrations: {newTag: v1, newSqliteClasses: [EventOutbox]}` (commit
