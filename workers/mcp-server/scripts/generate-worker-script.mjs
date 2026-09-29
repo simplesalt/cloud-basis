@@ -92,6 +92,12 @@ function yamlDoubleQuoted(text) {
   return out;
 }
 
+// Upjet hands forProvider fields to Terraform, which reads every string as a
+// template: ${ and %{ in the bundle must be doubled to reach Cloudflare as-is.
+function terraformLiteral(text) {
+  return text.replaceAll('${', () => '$${').replaceAll('%{', () => '%%{');
+}
+
 function indent(text, spaces) {
   const pad = ' '.repeat(spaces);
   return text
@@ -122,7 +128,7 @@ spec:
     compatibilityDate: ${yamlDoubleQuoted(COMPATIBILITY_DATE)}
     compatibilityFlags:
       - global_fetch_strictly_public
-    content: ${yamlDoubleQuoted(content)}
+    content: ${yamlDoubleQuoted(terraformLiteral(content))}
     bindings:
 ${indent(
   `- name: OAUTH_KV
