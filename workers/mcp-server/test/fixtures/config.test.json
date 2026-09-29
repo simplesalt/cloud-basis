@@ -1,0 +1,6 @@
+{
+  "host": "mcp.test.example",
+  "accessAuthDomain": "test-team.cloudflareaccess.com",
+  "accessClientId": "test-access-client-id",
+  "kvNamespaceId": "test-kv-namespace-id"
+}
