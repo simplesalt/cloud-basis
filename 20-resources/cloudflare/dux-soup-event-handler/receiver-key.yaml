@@ -1,0 +1,176 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dux-soup-event-handler
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: merge
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+type: Opaque
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dux-soup-receiver-key
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dux-soup-receiver-key
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [duxsoup-api-key]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dux-soup-receiver-key
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+subjects:
+  - kind: ServiceAccount
+    name: dux-soup-receiver-key
+    namespace: crossplane-system
+roleRef:
+  kind: ClusterRole
+  name: dux-soup-receiver-key
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dux-soup-receiver-key-patcher
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [dux-soup-event-handler]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dux-soup-receiver-key
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+subjects:
+  - kind: ServiceAccount
+    name: dux-soup-receiver-key
+    namespace: crossplane-system
+roleRef:
+  kind: Role
+  name: dux-soup-receiver-key-patcher
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: derive-dux-soup-receiver-key
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 8
+  template:
+    metadata:
+      labels:
+        entity: cluster
+        capability: infra
+    spec:
+      serviceAccountName: dux-soup-receiver-key
+      restartPolicy: OnFailure
+      volumes:
+        - name: shared
+          emptyDir:
+            medium: Memory
+      initContainers:
+        - name: fetch-source-key
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              B64=$(kubectl get secret duxsoup-api-key -n ssint-main-msg \
+                -o jsonpath='{.data.api_key}' 2>/dev/null)
+              if [ -z "$B64" ]; then
+                echo "duxsoup-api-key not found or empty; retrying"
+                exit 1
+              fi
+              printf '%s' "$B64" | base64 -d > /shared/api_key
+              if [ ! -s /shared/api_key ]; then
+                echo "decoded api key is empty; retrying"
+                exit 1
+              fi
+              echo "source key fetched"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+        - name: derive-key
+          image: python:3.13-alpine
+          command: ["python3", "-c"]
+          args:
+            - |
+              import hmac, hashlib, base64, sys
+              with open("/shared/api_key", "rb") as f:
+                  key = f.read()
+              if not key:
+                  sys.exit(1)
+              digest = hmac.new(key, b"duxsoup-webhook", hashlib.sha256).digest()
+              token = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+              with open("/shared/receiver_key", "w") as f:
+                  f.write(token)
+              print("receiver key derived")
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+      containers:
+        - name: patch-secret
+          image: bitnami/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              KEY_B64=$(base64 -w0 < /shared/receiver_key)
+              if [ -z "$KEY_B64" ]; then
+                echo "derived receiver key is empty; not patching"
+                exit 1
+              fi
+              kubectl patch secret dux-soup-event-handler \
+                -n crossplane-system \
+                --type=merge \
+                -p "{\"data\":{\"receiver_key\":\"$KEY_B64\"}}"
+              echo "patched dux-soup-event-handler with derived receiver key"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+              readOnly: true

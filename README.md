@@ -63,6 +63,7 @@ stages.yaml            three Flux Kustomizations — the stage chain (below)
 20-resources/          stage 3: managed resources
   provider-configs/    ProviderConfig(s) + backing credential Secret for the ssint-main Cloudflare account
   cloudflare/          ssint-main Cloudflare account: R2, KV, DNS, tunnel
+    dux-soup-event-handler/  Dux Soup event handler Worker (Script) + its receiver-key Job
 quarantine/            known-broken manifest, deliberately excluded from any build
 ```
 
@@ -272,6 +273,7 @@ anywhere in this repo, and none intersect `simplesalt/brain`'s tuples (see
 | `Bucket/cf-main-backups` | `backups` |
 | `KvNamespace/cf-main-kv-sot-test-results` | `b8f5e5a1be0240f6b484b4ab1258a6a8` |
 | `KvNamespace/cf-main-kv-sot-test-results-dev` | `05b9f242460f42b1bd29178bf85b2767` |
+| `Script/dux-soup-event-handler` | `main-dux-soup-event-handler` |
 
 The `TrustOrganization/cf-main-zero-trust-org`, `TrustAccessPolicy/simplesalt-email-domain`,
 `ProjectService/admin-googleapis-com`, and `ServiceAccount/cloudflare-sso-agent`
@@ -331,6 +333,20 @@ those ARE self-populating via in-repo Jobs (`fetch-ssint-main-tunnel-id`,
 `tunnel-token-job.yaml`) once `TrustTunnelCloudflared/ssint-main-tunnel` is
 Ready, so they aren't "out-of-band" in the same sense.
 
+`dux-soup-event-handler` (`crossplane-system`) is the same kind of
+self-populating placeholder: its `receiver_key` key is empty at apply time
+and is filled by the `derive-dux-soup-receiver-key` Job
+(`20-resources/cloudflare/dux-soup-event-handler/receiver-key.yaml`), which
+derives it from `ssint-main-msg/duxsoup-api-key` (owned by
+`simplesalt/brain`, not this repo). Unlike the tunnel Jobs, it has no
+Crossplane condition to wait on — it retries (via `backoffLimit`) until that
+Secret exists and is non-empty. Re-trigger after the source API key rotates
+by deleting the Job — Flux recreates it. `dux-soup-event-handler-config`
+(same namespace) is a sibling Secret but is **not** out-of-band: its keys
+are ordinary git-committed `stringData`, not populated by any Job — see
+"Dux Soup event handler" below for why non-secret values live in a Secret
+at all.
+
 ## Quarantined file
 
 `quarantine/cloudflare-zero-trust-idp-quarantine.yaml` is copied
@@ -369,6 +385,70 @@ here lived in `10-cloudflare/zero-trust.yaml`, which was removed as a
 duplicate of `simplesalt/brain`'s copy (simplesalt/projects#226); that
 hardcoded reference now only exists in `brain`.
 
+## Dux Soup event handler
+
+`20-resources/cloudflare/dux-soup-event-handler/` takes over the existing,
+hand-uploaded Cloudflare Worker `main-dux-soup-event-handler` with a
+`Script` managed resource (adopted via `crossplane.io/external-name`, no
+`Delete`/`LateInitialize` in `managementPolicies`) so its code deploys from
+this repo instead of by hand (simplesalt/projects#595). Dux Soup posts
+every webhook event to it through the zone route
+`api.simplesalt.company/<token>/dux*`. The Worker:
+
+- answers 405 to anything but POST and 404 unless the first path segment
+  hashes to `ROUTE_PATH_SHA256`, and 400 to a body that is not a JSON object;
+- hands every JSON-object event, byte-for-byte, to the `EventOutbox`
+  Durable Object, which stores it in SQLite before the Worker answers and
+  then delivers it, oldest first, to the cluster's Dux Soup receiver at
+  `https://hooks.simplesalt.company/duxsoup/events?key=<RECEIVER_KEY>`
+  (served by the `ssint-main` tunnel — see `Record/hooks-simplesalt-company`
+  in `dns.yaml`). A 2xx deletes the row; 400/413/415/422 moves it to a
+  `dead_letter` table; anything else (receiver down, 401, 5xx, network)
+  keeps it and retries with exponential backoff capped at 10 minutes;
+- keeps received LinkedIn messages (`type: message`, `event: received`)
+  exactly as the hand-uploaded version did: same validation, same
+  `{topic, payload}` message on queue `main-inmessage-li`, same 202;
+- answers every other event 200 `{"status":"forwarded"}` (it used to answer
+  400).
+
+The Worker's source, `DuxSoupEventHandler.js`, lives alongside `script.yaml`
+in this same directory, with Miniflare tests under `test/` (`npm test`
+there). The source must never contain `${` or `%{`: the provider hands the
+Script's content to Terraform, which parses every string as a template
+(simplesalt/projects#594 hit this), so the handler builds strings by
+concatenation and `npm test` first runs `check-source.mjs` to enforce it. The directory's own `kustomization.yaml`
+reads that file into a build-time-only `ConfigMap` (`disableNameSuffixHash`,
+`config.kubernetes.io/local-config: "true"` so it's never actually applied)
+and a `replacements` rule copies its contents into the `Script`'s
+`spec.forProvider.content` — so the deployed code always matches the file
+in git, without duplicating it into the YAML by hand.
+
+Two values never appear in git: the zone-side route path token itself (the
+route that embeds it is managed directly in Cloudflare, outside this repo)
+and `RECEIVER_KEY`, the HMAC derived from the receiver's Dux Soup API key.
+Only the route token's SHA-256 (`ROUTE_PATH_SHA256`) is committed, so the
+Worker can verify a request's path without the token ever being readable
+from this repo. `RECEIVER_KEY` is filled by the `derive-dux-soup-receiver-key`
+Job the same way the tunnel token/id Secrets are (see "Out-of-band secrets"
+above).
+
+`BRANCH`, `ROUTE_PATH_SHA256`, and `RECEIVER_URL` are ordinary, non-secret
+configuration — but the installed `Script` CRD
+(`provider-cloudflare-workers:v0.2.6`) only exposes a text-valued binding
+through `textSecretRef` (a Kubernetes Secret reference), for both
+`plain_text` and `secret_text` binding types alike; there is no plain string
+field. So these three values are held in a plaintext, git-committed Secret
+(`dux-soup-event-handler-config`) purely to satisfy that shape, not because
+they're sensitive.
+
+**Follow-up required once this first reports `Synced=True`:** the `Script`
+currently carries `migrations: {newTag: v1, newSqliteClasses: [EventOutbox]}`
+to create the `EventOutbox` Durable Object class. The provider resends this
+`migrations` block on every update, and Cloudflare rejects re-creating a
+class that already exists — so a later commit must remove `migrations`
+entirely (or move to `oldTag`/incremental `steps`) once the class exists,
+or every subsequent update to this `Script` will fail.
+
 ## Validation
 
 Validated locally with `kustomize build .` (kustomize v5.7.1), per-stage:
@@ -392,10 +472,21 @@ Validated locally with `kustomize build .` (kustomize v5.7.1), per-stage:
   same objects built from `simplesalt/basis` `operators/` and `platform/` at
   the commit they were copied from (simplesalt/projects#567) — the move
   changed nothing about the objects themselves.
-- All 39 objects across the three stage builds carry
+- All 50 objects across the three stage builds carry
   `kustomize.toolkit.fluxcd.io/prune: disabled`.
 - Zero duplicate `kind`/`namespace`/`name` tuples confirmed across the whole
   repo (and none shared with `simplesalt/brain`, per simplesalt/projects#226).
+- `20-resources/cloudflare/dux-soup-event-handler/`'s own `kustomization.yaml`
+  builds cleanly standalone and as part of `20-resources`/`.`; its
+  `configMapGenerator` output (`ConfigMap/dux-soup-event-handler-source`,
+  local-config annotated) never appears in any of these builds, and the
+  `replacements`-copied `Script/dux-soup-event-handler`
+  `spec.forProvider.content` is byte-identical to
+  `DuxSoupEventHandler.js`. The rendered `Script`'s `spec` was checked
+  against the live `scripts.workers.upjet-cloudflare.m.upbound.io` CRD's
+  `openAPIV3Schema` with a small stdlib-only Python checker (types,
+  `required`, `enum`) — no `jsonschema`/`kubeconform` available in the
+  validation environment.
 
 ## Explicitly out of scope
 

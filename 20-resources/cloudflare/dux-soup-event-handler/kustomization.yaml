@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - receiver-key.yaml
+  - script.yaml
+
+configMapGenerator:
+  - name: dux-soup-event-handler-source
+    namespace: crossplane-system
+    files:
+      - content=DuxSoupEventHandler.js
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        config.kubernetes.io/local-config: "true"
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: dux-soup-event-handler-source
+      fieldPath: data.content
+    targets:
+      - select:
+          kind: Script
+          name: dux-soup-event-handler
+        fieldPaths:
+          - spec.forProvider.content

@@ -1,0 +1,18 @@
+{
+  "name": "dux-soup-event-handler-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node check-source.mjs && vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "vitest": "4.1.11",
+    "wrangler": "4.143.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260815.1": true,
+    "workerd@1.20260926.1": true
+  }
+}

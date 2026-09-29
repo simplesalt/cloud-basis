@@ -1,0 +1,22 @@
+name = "dux-soup-event-handler-test"
+main = "../DuxSoupEventHandler.js"
+compatibility_date = "2025-12-08"
+
+[[durable_objects.bindings]]
+name = "OUTBOX"
+class_name = "EventOutbox"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["EventOutbox"]
+
+[[queues.producers]]
+queue = "main-inmessage-li"
+binding = "main_InMessage_LI"
+
+[vars]
+BRANCH = "main"
+ROUTE_PATH_SHA256 = "de2f983e6920fa49d7046d65ef18987005005924f65b7110bf2030b68d2755d5"
+RECEIVER_URL = "https://receiver.test/duxsoup/events"
+RECEIVER_KEY = "test-receiver-key"
+OUTBOX_RETRY_BASE_MS = "50"
