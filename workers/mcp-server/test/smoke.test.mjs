@@ -102,6 +102,14 @@ test('authorization server metadata advertises CIMD, a registration endpoint, S2
   assert.ok(meta.token_endpoint_auth_methods_supported?.includes('none'));
 });
 
+test('authorization server metadata never reveals the slug', async () => {
+  const res = await fetchAs(HOST, '/.well-known/oauth-authorization-server');
+  assert.equal(res.status, 200);
+  const body = await res.text();
+  assert.doesNotMatch(body, new RegExp(SLUG));
+  assert.equal(JSON.parse(body).protected_resources, undefined);
+});
+
 test('a wrong path under the real host 404s without revealing the slug', async () => {
   const res = await fetchAs(HOST, '/wrong/mcp');
   assert.equal(res.status, 404);

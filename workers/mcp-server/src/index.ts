@@ -12,6 +12,7 @@
 //   HOST (from config.json, PENDING until filled in)
 //     /.well-known/oauth-protected-resource/<slug>/mcp   \ served by
 //     /.well-known/oauth-authorization-server            / OAuthProvider
+//                                  (minus protected_resources, which names the slug)
 //     /authorize            (GET shows consent, POST decides)  -- ours
 //     /oauth/token          \ served by OAuthProvider
 //     /oauth/register       /
@@ -178,6 +179,20 @@ function handleSignpost(url: URL, env: Env): Response {
   return notFound();
 }
 
+/**
+ * Drops protected_resources from the authorization-server metadata. That
+ * document is public at the host root and the only resource it would list
+ * is the /<slug>/mcp URL; clients reach the resource through the 401's
+ * resource_metadata pointer instead, so the list only ever leaked the slug.
+ */
+async function withoutProtectedResources(response: Response): Promise<Response> {
+  const metadata = (await response.json()) as Record<string, unknown>;
+  delete metadata.protected_resources;
+  const headers = new Headers(response.headers);
+  headers.delete('Content-Length');
+  return new Response(JSON.stringify(metadata), { status: response.status, headers });
+}
+
 /** The execution context OAuthProvider hands apiHandler: ctx.props from completeAuthorization(), ctx.auth from its own token record. */
 interface ApiExecutionContext extends ExecutionContext {
   readonly props: { email?: string };
@@ -230,6 +245,10 @@ export default {
       clientIdMetadataDocumentEnabled: true,
     });
 
-    return provider.fetch(request, env, ctx);
+    const response = await provider.fetch(request, env, ctx);
+    if (url.pathname === '/.well-known/oauth-authorization-server' && request.method === 'GET' && response.ok) {
+      return withoutProtectedResources(response);
+    }
+    return response;
   },
 };
