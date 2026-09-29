@@ -39,10 +39,6 @@ spec:
     content: ""
     observability:
       enabled: true
-    migrations:
-      newTag: v1
-      newSqliteClasses:
-        - EventOutbox
     bindings:
       - name: BRANCH
         type: plain_text

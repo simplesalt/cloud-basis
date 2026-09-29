@@ -441,13 +441,16 @@ field. So these three values are held in a plaintext, git-committed Secret
 (`dux-soup-event-handler-config`) purely to satisfy that shape, not because
 they're sensitive.
 
-**Follow-up required once this first reports `Synced=True`:** the `Script`
-currently carries `migrations: {newTag: v1, newSqliteClasses: [EventOutbox]}`
-to create the `EventOutbox` Durable Object class. The provider resends this
-`migrations` block on every update, and Cloudflare rejects re-creating a
-class that already exists — so a later commit must remove `migrations`
-entirely (or move to `oldTag`/incremental `steps`) once the class exists,
-or every subsequent update to this `Script` will fail.
+**The `Script` deliberately carries no `migrations`.** The `EventOutbox`
+Durable Object class was created on 2026-09-29 by a one-off
+`migrations: {newTag: v1, newSqliteClasses: [EventOutbox]}` (commit
+5ab8ecd), and the Worker now sits at migration tag `v1`. The provider
+resends whatever `migrations` the spec holds on every update, and Cloudflare
+rejects a migration whose tag precondition does not match ("Actor migration
+tag precondition failed"), so leaving it in made every later update fail.
+If the Worker is ever recreated from scratch, or a Durable Object class is
+added or renamed, put a single migration back for one reconcile and remove
+it again once the `Script` reports `Synced=True`.
 
 ## Validation
 
