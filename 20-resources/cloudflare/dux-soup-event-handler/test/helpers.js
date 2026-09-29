@@ -38,6 +38,30 @@ export function mockQueueSend(env) {
   };
 }
 
+export function captureConsole() {
+  const levels = ["debug", "log", "warn", "error"];
+  const original = {};
+  const lines = [];
+  for (const level of levels) {
+    original[level] = console[level];
+    console[level] = (...args) => {
+      lines.push(
+        args
+          .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+          .join(" ")
+      );
+    };
+  }
+  return {
+    lines,
+    restore: () => {
+      for (const level of levels) {
+        console[level] = original[level];
+      }
+    },
+  };
+}
+
 export function mockFetch(handlers) {
   const calls = [];
   const original = globalThis.fetch;

@@ -62,6 +62,15 @@ function firstPathSegment(pathname) {
   return idx === -1 ? pathname.slice(1) : pathname.slice(1, idx);
 }
 
+const REDACTED_ROUTE_SEGMENT = "<redacted>";
+
+function maskRoutePath(pathname) {
+  if (typeof pathname !== "string") return pathname;
+  const idx = pathname.indexOf("/", 1);
+  const rest = idx === -1 ? "" : pathname.slice(idx);
+  return "/" + REDACTED_ROUTE_SEGMENT + rest;
+}
+
 async function sha256Hex(input) {
   const data = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest("SHA-256", data);
@@ -138,7 +147,7 @@ async function recordToOutbox(env, bodyText) {
 
 async function handler(request, env) {
   const pathname = new URL(request.url).pathname;
-  cfLog("debug", "duxsoup_handler", "handler_invoked", { method: request.method, path: pathname });
+  cfLog("debug", "duxsoup_handler", "handler_invoked", { method: request.method, path: maskRoutePath(pathname) });
 
   if (request.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -151,7 +160,7 @@ async function handler(request, env) {
   const structureOk = pathname === "/" + segment || pathname.startsWith("/" + segment + "/");
   const segmentHash = await sha256Hex(segment);
   if (!structureOk || !timingSafeEqualHex(segmentHash, routeHash.toLowerCase())) {
-    cfLog("warn", "duxsoup_handler", "invalid_path", { path: pathname });
+    cfLog("warn", "duxsoup_handler", "invalid_path", { path: maskRoutePath(pathname) });
     return new Response("Not Found", { status: 404 });
   }
 
@@ -215,9 +224,9 @@ function withResponseLogging(fn, workerName) {
         const level = res && res.status >= 500 ? "error" : "warn";
         cfLog(level, workerName, "non_2xx_response", {
           method: request.method,
-          path: url.pathname,
+          path: maskRoutePath(url.pathname),
           status: res ? res.status : "no_response",
-          search: url.search || void 0,
+          hasQuery: url.search.length > 0,
           ray: request.headers.get("cf-ray") || void 0,
         });
       }
@@ -225,7 +234,7 @@ function withResponseLogging(fn, workerName) {
     } catch (err) {
       cfLog("error", workerName, "unhandled_exception", {
         method: request.method,
-        path: url.pathname,
+        path: maskRoutePath(url.pathname),
         error: String(err?.message || err),
       });
       throw err;
