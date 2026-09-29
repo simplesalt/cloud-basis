@@ -7,7 +7,7 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
     kustomize.toolkit.fluxcd.io/substitute: disabled
-    cloud-basis/source-sha256: "55bc8e49f31a74294cb7aefc2e662ae80321b2f6080582f2f8aa2eaab6797a3f"
+    cloud-basis/source-sha256: "6238e5b41cfd110187cd73d5614a5527a7f0050a966545e46a44f377f986b28e"
   labels:
     entity: cluster
     capability: infra
@@ -45,7 +45,7 @@ spec:
           name: mcp-server-runtime
           key: cookie_encryption_key
       - name: MCP_SLUG
-        type: plain_text
+        type: secret_text
         textSecretRef:
           name: mcp-server-runtime
           key: mcp_slug

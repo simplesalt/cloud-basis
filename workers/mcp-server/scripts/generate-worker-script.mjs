@@ -174,7 +174,7 @@ ${indent(
     name: mcp-server-runtime
     key: cookie_encryption_key
 - name: MCP_SLUG
-  type: plain_text
+  type: secret_text
   textSecretRef:
     name: mcp-server-runtime
     key: mcp_slug`,
