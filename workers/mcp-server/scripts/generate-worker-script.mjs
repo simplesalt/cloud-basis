@@ -18,6 +18,13 @@ const ACCOUNT_ID = 'ba92fe12c6c1275f965c7c86e3b392ac';
 const SCRIPT_NAME = 'main-mcp-server';
 const COMPATIBILITY_DATE = '2026-09-01';
 
+// etcd stores the Script with the bundle twice: in spec.forProvider.content
+// and again in status.atProvider.content once the provider observes it.
+// etcd refuses objects over 1.5 MiB (1,572,864 bytes), and a refused status
+// write is silent: the Script never turns Ready and stops taking new
+// versions. This budget leaves room for the rest of the object.
+const MAX_STORED_CONTENT_BYTES = 1_350_000;
+
 function parseArgs(argv) {
   const args = { bundle: 'dist/worker.js', config: 'config.json', out: '../../30-mcp/worker-script.yaml' };
   for (let i = 0; i < argv.length; i += 1) {
@@ -98,6 +105,18 @@ function terraformLiteral(text) {
   return text.replaceAll('${', () => '$${').replaceAll('%{', () => '%%{');
 }
 
+/** Bytes a string takes once Kubernetes stores it as JSON: Go escapes " \ and control characters, and writes < > & as \u00XX. */
+function storedJsonBytes(text) {
+  let bytes = 2;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (ch === '"' || ch === '\\' || ch === '\n' || ch === '\r' || ch === '\t') bytes += 2;
+    else if (ch === '<' || ch === '>' || ch === '&' || code < 0x20 || code === 0x2028 || code === 0x2029) bytes += 6;
+    else bytes += Buffer.byteLength(ch);
+  }
+  return bytes;
+}
+
 function indent(text, spaces) {
   const pad = ' '.repeat(spaces);
   return text
@@ -166,6 +185,14 @@ export async function generateWorkerScript({ bundle: bundlePath, config: configP
 
   if (typeof config.kvNamespaceId !== 'string' || config.kvNamespaceId === '') {
     throw new Error('config.json is missing a string value for "kvNamespaceId"');
+  }
+
+  const storedBytes = storedJsonBytes(terraformLiteral(content)) + storedJsonBytes(content);
+  if (storedBytes > MAX_STORED_CONTENT_BYTES) {
+    throw new Error(
+      `The bundle would take ${storedBytes} bytes of the Script object (spec plus observed copy), ` +
+        `over the ${MAX_STORED_CONTENT_BYTES}-byte budget under etcd's object limit; shrink the bundle.`
+    );
   }
 
   const manifest = renderManifest({ content, sourceSha256, kvNamespaceId: config.kvNamespaceId });

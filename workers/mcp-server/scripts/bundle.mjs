@@ -35,6 +35,25 @@ function buildTimeConfig(config) {
   return { host, accessAuthDomain, accessClientId };
 }
 
+/**
+ * zod re-exports ~60 translated error-message locales (~260 KB minified)
+ * through `locales`, and the MCP SDK's `import * as z` keeps them all in
+ * the bundle; zod itself only ever loads English (classic/external.js
+ * imports en.js directly). Serving an English-only locales index keeps
+ * the bundle small enough for the Crossplane Script to be stored at all
+ * (see MAX_STORED_CONTENT_BYTES in generate-worker-script.mjs).
+ */
+const englishOnlyZodLocales = {
+  name: 'english-only-zod-locales',
+  setup(pluginBuild) {
+    pluginBuild.onLoad({ filter: /[\\/]zod[\\/]v4[\\/]locales[\\/]index\.js$/ }, (args) => ({
+      contents: 'export { default as en } from "./en.js";\n',
+      loader: 'js',
+      resolveDir: dirname(args.path),
+    }));
+  },
+};
+
 export async function bundle({ config: configPath, out: outPath, entry: entryPath }) {
   const configFile = resolve(packageRoot, configPath);
   const config = JSON.parse(await readFile(configFile, 'utf8'));
@@ -59,6 +78,7 @@ export async function bundle({ config: configPath, out: outPath, entry: entryPat
     // A workerd builtin, resolved by the runtime itself, never bundled.
     external: ['cloudflare:*'],
     define,
+    plugins: [englishOnlyZodLocales],
     logLevel: 'silent',
   });
 
