@@ -33,7 +33,7 @@ let handler: McpHttpHandler | undefined;
 export function getMcpHandler(): McpHttpHandler {
   if (handler === undefined) {
     handler = createMcpHandler(() => {
-      const server = new McpServer({ name: 'ssint-main-mcp-server', version: '0.1.0' });
+      const server = new McpServer({ name: 'ssint-main-mcp-server', version: '0.1.1' });
       server.registerTool(
         'whoami',
         {
