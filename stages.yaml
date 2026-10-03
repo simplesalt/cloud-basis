@@ -60,6 +60,9 @@ spec:
       name: provider-cloudflare-zero
     - apiVersion: pkg.crossplane.io/v1
       kind: Provider
+      name: provider-cloudflare-connectivity
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
       name: upbound-provider-family-gcp
     - apiVersion: pkg.crossplane.io/v1
       kind: Provider

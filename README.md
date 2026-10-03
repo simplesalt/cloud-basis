@@ -8,7 +8,7 @@ cluster stack.
 
 This repo now installs Crossplane itself (simplesalt/projects#567): the
 `crossplane-system` namespace, the `crossplane-stable` Helm chart source,
-and the `crossplane` `HelmRelease`. It also installs the six Cloudflare and
+and the `crossplane` `HelmRelease`. It also installs the seven Cloudflare and
 GCP `Provider` packages it consumes, their two `DeploymentRuntimeConfig`s,
 and the CRD-watch `ClusterRole` they need — all moved here from
 `simplesalt/basis` (`operators/ns.yaml`, `operators/helmrepos.yaml`,
@@ -88,8 +88,8 @@ ss-basis-operators → ss-cloud-basis-crossplane → ss-cloud-basis-providers �
   CRDs being Established — Crossplane's init creates those CRDs without
   waiting for them, so the HelmRelease alone does not guarantee stage 2 can
   apply.
-- `ss-cloud-basis-providers` (`10-providers/`) installs the six `Provider`
-  packages and their runtime configs. It waits on all six Providers being
+- `ss-cloud-basis-providers` (`10-providers/`) installs the seven `Provider`
+  packages and their runtime configs. It waits on all seven Providers being
   both `Installed` and `Healthy` — a `Provider` has no `Ready` condition, so
   this uses a `healthCheckExprs` CEL expression rather than a plain
   `healthChecks` entry (which would treat the object as healthy the moment
@@ -502,7 +502,7 @@ Validated locally with `kustomize build .` (kustomize v5.7.1), per-stage:
 
 - The Cloudflare provider family package
   (`wildbitca-provider-family-cloudflare`) is still installed implicitly as
-  a dependency of the four `provider-cloudflare-*` packages in
+  a dependency of the five `provider-cloudflare-*` packages in
   `10-providers/cf-providers.yaml`; its version is not pinned here
   (Crossplane resolves it itself).
 - Personal `evans-home` account resources (`Secret/cloudflare-credentials`,

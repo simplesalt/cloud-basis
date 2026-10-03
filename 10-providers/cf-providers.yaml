@@ -12,6 +12,8 @@ spec:
   runtimeConfigRef:
     name: cloudflare-providers
 ---
+# At v0.3.0 for Workers VPC (vpc_service Script bindings and DirectoryService),
+# simplesalt/projects#686.
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
@@ -22,7 +24,7 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
-  package: xpkg.upbound.io/wildbitca/provider-cloudflare-workers:v0.2.6
+  package: xpkg.upbound.io/wildbitca/provider-cloudflare-workers:v0.3.0
   runtimeConfigRef:
     name: cloudflare-providers
 ---
@@ -53,5 +55,21 @@ metadata:
     kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   package: xpkg.upbound.io/wildbitca/provider-cloudflare-zero:v0.2.6
+  runtimeConfigRef:
+    name: cloudflare-providers
+---
+# At v0.3.0 for Workers VPC (vpc_service Script bindings and DirectoryService),
+# simplesalt/projects#686.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-cloudflare-connectivity
+  labels:
+    entity: cluster
+    capability: access
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  package: xpkg.upbound.io/wildbitca/provider-cloudflare-connectivity:v0.3.0
   runtimeConfigRef:
     name: cloudflare-providers
