@@ -20,6 +20,8 @@ metadata:
   name: dux-soup-event-handler
   namespace: crossplane-system
   annotations:
+    # Held paused across the provider-cloudflare-workers v0.3.0 upgrade (simplesalt/projects#686); remove once observability.traces is declared.
+    crossplane.io/paused: "true"
     crossplane.io/external-name: main-dux-soup-event-handler
     kustomize.toolkit.fluxcd.io/prune: disabled
     kustomize.toolkit.fluxcd.io/substitute: disabled

@@ -8,3 +8,20 @@ resources:
   - worker-script.yaml
   - routes.yaml
   - runtime-secret.yaml
+
+patches:
+  # Held paused across the provider-cloudflare-workers v0.3.0 upgrade (simplesalt/projects#686); remove once observability.traces is declared.
+  - target:
+      group: workers.upjet-cloudflare.m.upbound.io
+      version: v1alpha1
+      kind: Script
+      name: main-mcp-server
+      namespace: crossplane-system
+    patch: |-
+      apiVersion: workers.upjet-cloudflare.m.upbound.io/v1alpha1
+      kind: Script
+      metadata:
+        name: main-mcp-server
+        namespace: crossplane-system
+        annotations:
+          crossplane.io/paused: "true"
