@@ -8,6 +8,9 @@ metadata:
   name: cf-main-vpc-hindsight
   namespace: crossplane-system
   annotations:
+    # Paused: the provider kept re-requesting creation without confirming
+    # the service exists (simplesalt/projects#686); held until that is understood.
+    crossplane.io/paused: "true"
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     entity: cluster
@@ -32,6 +35,9 @@ metadata:
   name: cf-main-vpc-gbrain
   namespace: crossplane-system
   annotations:
+    # Paused: the provider kept re-requesting creation without confirming
+    # the service exists (simplesalt/projects#686); held until that is understood.
+    crossplane.io/paused: "true"
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     entity: cluster
