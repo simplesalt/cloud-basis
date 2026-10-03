@@ -445,7 +445,9 @@ they're sensitive.
 `observability` and its `logs` as plain optional fields and reads back
 everything Cloudflare returns, so a spec that sets only `enabled: true`
 never matches and the provider re-uploads the Worker every few seconds
-(it did on 2026-09-29, until commit eac37ec paused updates). Keep the spec
+(it did on 2026-09-29, until commit eac37ec paused updates).
+provider-cloudflare-workers v0.3.0 also reads back `observability.traces`,
+so that is spelled out too (simplesalt/projects#686). Keep the spec
 equal to what `status.atProvider.observability` shows.
 
 **The `Script` deliberately carries no `migrations`.** The `EventOutbox`

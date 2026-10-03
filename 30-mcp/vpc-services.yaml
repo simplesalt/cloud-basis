@@ -1,0 +1,51 @@
+# Workers VPC services the MCP server Worker binds to reach Hindsight and
+# gbrain through the ssint-main tunnel, with no public hostname or ingress
+# rule. Created, not adopted; the Script's vpc_service bindings use each
+# one's status.atProvider.serviceId (simplesalt/projects#686).
+apiVersion: connectivity.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: DirectoryService
+metadata:
+  name: cf-main-vpc-hindsight
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: main-hindsight
+    type: http
+    httpPort: 8888
+    host:
+      hostname: hindsight.ssint-main-ai.svc.k.famevans.win
+      resolverNetwork:
+        tunnelId: 83c27a64-4074-474c-9a8f-19448d1c2081
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main
+---
+apiVersion: connectivity.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: DirectoryService
+metadata:
+  name: cf-main-vpc-gbrain
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: main-gbrain
+    type: http
+    httpPort: 3131
+    host:
+      hostname: gbrain.ssint-main-ai.svc.k.famevans.win
+      resolverNetwork:
+        tunnelId: 83c27a64-4074-474c-9a8f-19448d1c2081
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main

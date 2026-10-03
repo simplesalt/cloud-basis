@@ -8,9 +8,10 @@ resources:
   - worker-script.yaml
   - routes.yaml
   - runtime-secret.yaml
+  - vpc-services.yaml
 
 patches:
-  # Held paused across the provider-cloudflare-workers v0.3.0 upgrade (simplesalt/projects#686); remove once observability.traces is declared.
+  # Declares observability.traces until workers/mcp-server's generator emits it (simplesalt/projects#686), then this patch goes.
   - target:
       group: workers.upjet-cloudflare.m.upbound.io
       version: v1alpha1
@@ -23,5 +24,10 @@ patches:
       metadata:
         name: main-mcp-server
         namespace: crossplane-system
-        annotations:
-          crossplane.io/paused: "true"
+      spec:
+        forProvider:
+          observability:
+            traces:
+              enabled: false
+              headSamplingRate: 1
+              persist: true
