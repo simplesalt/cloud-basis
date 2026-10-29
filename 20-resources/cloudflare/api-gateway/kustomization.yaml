@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - dns.yaml
+  - script.yaml
+
+configMapGenerator:
+  - name: api-gateway-source
+    namespace: crossplane-system
+    files:
+      - content=ApiGateway.js
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        config.kubernetes.io/local-config: "true"
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: api-gateway-source
+      fieldPath: data.content
+    targets:
+      - select:
+          kind: Script
+          name: api-gateway
+        fieldPaths:
+          - spec.forProvider.content

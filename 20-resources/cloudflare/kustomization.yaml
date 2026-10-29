@@ -15,3 +15,4 @@ resources:
   - tunnel-daemon.yaml
   - creds-job.yaml
   - dux-soup-event-handler
+  - api-gateway

@@ -1,0 +1,56 @@
+# api.simplesalt.company: proxied A record with dummy content; every request is
+# served by a Workers route, with the gateway (script.yaml) catching all paths
+# no other Worker claims. Adopted: hand-made 2025-12-23, so it carries its
+# Cloudflare record id and the policies leave out Delete.
+apiVersion: dns.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: Record
+metadata:
+  name: api-simplesalt-company
+  namespace: crossplane-system
+  annotations:
+    crossplane.io/external-name: 605672f4c7698da1880403543c07499c
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+  forProvider:
+    zoneId: 260b251cdb53f8376875a8eb8d03ca0b
+    name: api
+    type: A
+    content: "192.0.2.1"
+    proxied: true
+    ttl: 1
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main
+---
+# Where the gateway sends APIs served by the ssint-main cluster: the ssint-main
+# tunnel. Requests arrive with Host api.simplesalt.company, so the tunnel's
+# ingress rules for that host and path decide the service; this name alone
+# matches no rule. Created, not adopted.
+apiVersion: dns.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: Record
+metadata:
+  name: ssint-main-origin-simplesalt-company
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    zoneId: 260b251cdb53f8376875a8eb8d03ca0b
+    name: ssint-main-origin
+    type: CNAME
+    content: 83c27a64-4074-474c-9a8f-19448d1c2081.cfargotunnel.com
+    ttl: 1
+    proxied: true
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main
