@@ -43,8 +43,6 @@ spec:
         precedence: 1
         include:
           - email:
-              email: admin@simplesalt.company
-          - email:
               email: dylan.evans@simplesalt.company
   providerConfigRef:
     name: ssint-main

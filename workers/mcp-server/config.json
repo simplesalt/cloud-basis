@@ -7,7 +7,6 @@
   "gbrainServiceId": "01a19208-be79-7bb2-b3c0-9e434acfad08",
   "gbrainKey": "gbrain-mcp",
   "allowedEmails": [
-    "admin@simplesalt.company",
     "dylan.evans@simplesalt.company"
   ]
 }
