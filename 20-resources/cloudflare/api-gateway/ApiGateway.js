@@ -15,6 +15,9 @@
 export const ROUTES = [
   // Grammar fix, ssint-main cluster, namespace ssint-main-voice.
   { prefix: "/45e6451afc312886/grammar", origin: "ssint-main-origin.simplesalt.company" },
+  // Fireflies webhook, ssint-main cluster, namespace ssint-main-msg. No Access:
+  // the ingest checks the Fireflies request signature.
+  { prefix: "/c8d3f02053a7ef0c/fireflies", origin: "ssint-main-origin.simplesalt.company" },
 ];
 
 export function match(pathname) {

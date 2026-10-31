@@ -9,6 +9,9 @@ test("matches a prefix exactly or at a path boundary only", () => {
   assert.equal(match("/45e6451afc312886/grammarx"), undefined);
   assert.equal(match("/45e6451afc312886"), undefined);
   assert.equal(match("/"), undefined);
+  assert.ok(match("/c8d3f02053a7ef0c/fireflies"));
+  assert.equal(match("/c8d3f02053a7ef0c/firefliesx"), undefined);
+  assert.equal(match("/c8d3f02053a7ef0c"), undefined);
 });
 
 test("unmapped paths answer 404 without forwarding", async () => {
