@@ -24,15 +24,18 @@ function parseArgs(argv) {
   return args;
 }
 
-/** Only the fields the bundle itself needs baked in; kvNamespaceId is manifest-only. */
+/** Only the fields the bundle itself needs baked in; kvNamespaceId and the VPC service ids are manifest-only. */
 function buildTimeConfig(config) {
-  const { host, accessAuthDomain, accessClientId } = config;
-  for (const [key, value] of Object.entries({ host, accessAuthDomain, accessClientId })) {
+  const { host, accessAuthDomain, accessClientId, gbrainKey, allowedEmails } = config;
+  for (const [key, value] of Object.entries({ host, accessAuthDomain, accessClientId, gbrainKey })) {
     if (typeof value !== 'string' || value === '') {
       throw new Error(`config.json is missing a string value for "${key}"`);
     }
   }
-  return { host, accessAuthDomain, accessClientId };
+  if (!Array.isArray(allowedEmails) || allowedEmails.length === 0 || !allowedEmails.every((e) => typeof e === 'string' && e !== '')) {
+    throw new Error(`config.json: allowedEmails must be a non-empty list of email addresses`);
+  }
+  return { host, accessAuthDomain, accessClientId, gbrainKey, allowedEmails };
 }
 
 /**

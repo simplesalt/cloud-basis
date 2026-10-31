@@ -13,9 +13,20 @@ export interface BuildConfig {
   accessAuthDomain: string;
   /** Client ID of the Access for SaaS OIDC application fronting this Worker. */
   accessClientId: string;
+  /** Shared, non-secret bearer key for gbrain's /mcp endpoint. */
+  gbrainKey: string;
+  /** The only emails let in, checked here as well as by the Access policy. */
+  allowedEmails: string[];
 }
 
 export const BUILD_CONFIG: BuildConfig = JSON.parse(__BUILD_CONFIG__) as BuildConfig;
+
+/** True only for an email in allowedEmails, compared case-insensitively. */
+export function isAllowedEmail(email: string | undefined): boolean {
+  if (!email) return false;
+  const wanted = email.toLowerCase();
+  return BUILD_CONFIG.allowedEmails.some((allowed) => allowed.toLowerCase() === wanted);
+}
 
 /** The fixed hostname documented as a signpost to the real MCP host; never PENDING. */
 export const API_SIGNPOST_HOST = 'api.simplesalt.company';

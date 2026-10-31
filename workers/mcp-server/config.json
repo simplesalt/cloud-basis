@@ -2,5 +2,12 @@
   "host": "r4x69awbkkotgfs44cmd.simplesalt.company",
   "accessAuthDomain": "fqurzlaaagt.cloudflareaccess.com",
   "accessClientId": "4d5c91711b34ba662246897bd008f09d5a4211303bacf1bed8e79de367c0b4ac",
-  "kvNamespaceId": "fd79fd43d8ba42a4bba5092e51b4d337"
+  "kvNamespaceId": "fd79fd43d8ba42a4bba5092e51b4d337",
+  "hindsightServiceId": "01a19208-be85-7712-8ca4-f3de5440a64b",
+  "gbrainServiceId": "01a19208-be79-7bb2-b3c0-9e434acfad08",
+  "gbrainKey": "gbrain-mcp",
+  "allowedEmails": [
+    "admin@simplesalt.company",
+    "dylan.evans@simplesalt.company"
+  ]
 }

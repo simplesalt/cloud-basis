@@ -13,6 +13,10 @@ export interface Env {
   COOKIE_ENCRYPTION_KEY: string;
   /** The 32-hex path secret. Never committed to git; supplied at deploy time. */
   MCP_SLUG: string;
+  /** Workers VPC service binding to Hindsight (in-cluster REST, no auth). */
+  HINDSIGHT: Fetcher;
+  /** Workers VPC service binding to gbrain (in-cluster /mcp endpoint). */
+  GBRAIN: Fetcher;
   /**
    * Injected by @cloudflare/workers-oauth-provider on every request it
    * routes to defaultHandler; not a real deploy-time binding.

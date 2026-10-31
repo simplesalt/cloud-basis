@@ -1,5 +1,5 @@
-// The MCP surface itself: one placeholder tool, `whoami`. Real tools come
-// later (this Effort is scoped to auth only).
+// The MCP surface itself: `whoami`, plus the Hindsight and gbrain tools
+// registered from ./backends.
 //
 // Library choice: @modelcontextprotocol/server's createMcpHandler() serves
 // Streamable HTTP statelessly, one fresh server instance per HTTP request,
@@ -12,6 +12,9 @@
 // for exactly which package versions this depends on.
 import { createMcpHandler, McpServer, type McpHttpHandler } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+
+import { registerBackendTools } from './backends';
+import type { Env } from './env';
 
 /**
  * The subset of @modelcontextprotocol/core-internal's AuthInfo this Worker
@@ -27,10 +30,12 @@ export interface WorkerAuthInfo {
   extra?: Record<string, unknown>;
 }
 
-let handler: McpHttpHandler | undefined;
+// Keyed by env: the tools close over its service bindings, which are stable for an isolate's life.
+const handlers = new WeakMap<Env, McpHttpHandler>();
 
-/** The stateless MCP HTTP handler, built once per isolate (it holds no per-request state). */
-export function getMcpHandler(): McpHttpHandler {
+/** The stateless MCP HTTP handler, built once per env (it holds no per-request state). */
+export function getMcpHandler(env: Env): McpHttpHandler {
+  let handler = handlers.get(env);
   if (handler === undefined) {
     handler = createMcpHandler(() => {
       const server = new McpServer({ name: 'ssint-main-mcp-server', version: '0.1.1' });
@@ -53,8 +58,10 @@ export function getMcpHandler(): McpHttpHandler {
           };
         }
       );
+      registerBackendTools(server, env);
       return server;
     });
+    handlers.set(env, handler);
   }
   return handler;
 }

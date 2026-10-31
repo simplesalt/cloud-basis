@@ -30,7 +30,7 @@ import {
 } from '@cloudflare/workers-oauth-provider';
 
 import { accessAuthorizationEndpoint, exchangeCodeForEmail } from './access';
-import { API_SIGNPOST_HOST, BUILD_CONFIG } from './config';
+import { API_SIGNPOST_HOST, BUILD_CONFIG, isAllowedEmail } from './config';
 import { renderConsentPage } from './consent';
 import type { Env } from './env';
 import { getMcpHandler, type WorkerAuthInfo } from './mcp';
@@ -153,6 +153,13 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
       clientSecret: env.ACCESS_CLIENT_SECRET,
     });
 
+    // Access's policy is the first check; this one holds even if that policy is loosened.
+    if (!isAllowedEmail(email)) {
+      console.warn('oauth callback refused: email not in allowedEmails');
+      headers.set('Location', authorizationErrorRedirect(original, 'access_denied'));
+      return new Response(null, { status: 302, headers });
+    }
+
     const { redirectTo } = await oauth.completeAuthorization({
       request: original,
       userId: email,
@@ -218,6 +225,12 @@ export default {
         // getting the auth/props fields OAuthProvider actually attaches.
         async fetch(mcpRequest: Request, mcpEnv: Env, mcpCtx: ExecutionContext): Promise<Response> {
           const apiCtx = mcpCtx as ApiExecutionContext;
+          if (!isAllowedEmail(apiCtx.props.email)) {
+            return new Response(JSON.stringify({ error: 'forbidden' }), {
+              status: 403,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
           const authInfo: WorkerAuthInfo = {
             token: apiCtx.auth.token,
             clientId: apiCtx.auth.clientId ?? '',
@@ -225,7 +238,7 @@ export default {
             expiresAt: apiCtx.auth.expiresAt,
             extra: { email: apiCtx.props.email },
           };
-          return getMcpHandler().fetch(mcpRequest, { authInfo });
+          return getMcpHandler(mcpEnv).fetch(mcpRequest, { authInfo });
         },
       },
       defaultHandler: {
