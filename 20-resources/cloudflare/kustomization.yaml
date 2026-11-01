@@ -16,3 +16,4 @@ resources:
   - creds-job.yaml
   - dux-soup-event-handler
   - api-gateway
+  - oidc-keys
