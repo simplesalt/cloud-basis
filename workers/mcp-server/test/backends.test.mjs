@@ -71,12 +71,12 @@ async function rpc(env, method, params) {
 
 const callTool = async (env, name, args) => (await rpc(env, 'tools/call', { name, arguments: args })).result;
 
-test('tools/list exposes whoami, the four hindsight tools and exactly the three allowlisted gbrain tools', async () => {
+test('tools/list exposes only read tools: whoami, three hindsight tools and the two allowlisted gbrain tools', async () => {
   const env = { HINDSIGHT: fakeFetcher(() => json({})), GBRAIN: fakeFetcher(() => json({})) };
   const { result } = await rpc(env, 'tools/list', {});
   assert.deepEqual(
     result.tools.map((t) => t.name).sort(),
-    ['gbrain_get_page', 'gbrain_put_page', 'gbrain_search', 'hindsight_list_banks', 'hindsight_recall', 'hindsight_reflect', 'hindsight_retain', 'whoami'],
+    ['gbrain_get_page', 'gbrain_search', 'hindsight_list_banks', 'hindsight_recall', 'hindsight_reflect', 'whoami'],
   );
 });
 
@@ -110,19 +110,6 @@ test('hindsight_reflect posts a low-budget reflect and returns the markdown', as
   assert.equal(result.content[0].text, '# Answer');
 });
 
-test('hindsight_retain posts one synchronous item', async () => {
-  const HINDSIGHT = fakeFetcher(() => json({ success: true }));
-  const result = await callTool({ HINDSIGHT, GBRAIN: fakeFetcher(() => json({})) }, 'hindsight_retain', {
-    bank: 'b',
-    content: 'remember',
-    context: 'ctx',
-    tags: ['t'],
-  });
-  assert.ok(HINDSIGHT.calls[0].url.endsWith('/v1/default/banks/b/memories'));
-  assert.deepEqual(JSON.parse(HINDSIGHT.calls[0].init.body), { items: [{ content: 'remember', context: 'ctx', tags: ['t'] }], async: false });
-  assert.notEqual(result.isError, true);
-});
-
 test('a non-2xx Hindsight answer comes back as a tool error, not an exception', async () => {
   const HINDSIGHT = fakeFetcher(() => json({ detail: 'nope' }, 500));
   const result = await callTool({ HINDSIGHT, GBRAIN: fakeFetcher(() => json({})) }, 'hindsight_list_banks', {});
@@ -134,7 +121,6 @@ test('gbrain tools send the allowlisted tool name with the key and parse the SSE
   for (const [tool, name, args] of [
     ['gbrain_search', 'search', { query: 'q', limit: 3 }],
     ['gbrain_get_page', 'get_page', { slug: 'a/b' }],
-    ['gbrain_put_page', 'put_page', { slug: 'a/b', content: '---\ntitle: T\n---\nbody' }],
   ]) {
     const GBRAIN = fakeFetcher(() => gbrainReply(JSON.stringify({ ok: name })));
     const result = await callTool({ HINDSIGHT: fakeFetcher(() => json({})), GBRAIN }, tool, args);
@@ -178,4 +164,14 @@ test('a gbrain tool outside the allowlist cannot be called', async () => {
   const response = await rpc({ HINDSIGHT: fakeFetcher(() => json({})), GBRAIN }, 'tools/call', { name: 'delete_page', arguments: { slug: 'x' } });
   assert.equal(GBRAIN.calls.length, 0);
   assert.ok(response.error || response.result?.isError);
+});
+
+test('the write tools are gone: retain and put_page reach neither backend', async () => {
+  for (const name of ['hindsight_retain', 'gbrain_put_page']) {
+    const HINDSIGHT = fakeFetcher(() => json({}));
+    const GBRAIN = fakeFetcher(() => gbrainReply('{}'));
+    const response = await rpc({ HINDSIGHT, GBRAIN }, 'tools/call', { name, arguments: { bank: 'b', content: 'x', slug: 'x' } });
+    assert.equal(HINDSIGHT.calls.length + GBRAIN.calls.length, 0);
+    assert.ok(response.error || response.result?.isError);
+  }
 });

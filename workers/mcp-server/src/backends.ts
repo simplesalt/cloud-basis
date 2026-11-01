@@ -3,8 +3,9 @@
 // 30-mcp/worker-script.yaml). Hindsight is plain REST with no auth; gbrain is
 // a stateless JSON-RPC /mcp endpoint that always answers as SSE.
 //
-// gbrain lists ~116 tools and its key has admin scope, so only the three in
-// GBRAIN_TOOLS are exposed — never forward an arbitrary tool name.
+// Read-only: no tool here writes to either backend. gbrain lists ~116 tools
+// and its key has admin scope, so only the two read tools in GBRAIN_TOOLS are
+// exposed — never forward an arbitrary tool name.
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
@@ -96,7 +97,7 @@ async function gbrain(env: Env, name: (typeof GBRAIN_TOOLS)[number], args: Recor
 }
 
 /** The only gbrain tools this server will call. */
-const GBRAIN_TOOLS = ['search', 'get_page', 'put_page'] as const;
+const GBRAIN_TOOLS = ['search', 'get_page'] as const;
 
 export function registerBackendTools(server: McpServer, env: Env): void {
   server.registerTool(
@@ -151,28 +152,6 @@ export function registerBackendTools(server: McpServer, env: Env): void {
   );
 
   server.registerTool(
-    'hindsight_retain',
-    {
-      title: 'Retain in Hindsight',
-      description: 'Stores a memory in a Hindsight bank.',
-      inputSchema: z.object({
-        bank: z.string().min(1),
-        content: z.string().min(1),
-        context: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-      }),
-    },
-    ({ bank, content, context, tags }) =>
-      respond(async () => {
-        await hindsight(env, 'POST', `/v1/default/banks/${encodeURIComponent(bank)}/memories`, {
-          items: [{ content, context, tags }],
-          async: false,
-        });
-        return 'Retained.';
-      }),
-  );
-
-  server.registerTool(
     'gbrain_search',
     {
       title: 'Search gbrain',
@@ -192,13 +171,4 @@ export function registerBackendTools(server: McpServer, env: Env): void {
     ({ slug }) => respond(() => gbrain(env, 'get_page', { slug })),
   );
 
-  server.registerTool(
-    'gbrain_put_page',
-    {
-      title: 'Write a gbrain page',
-      description: 'Creates or replaces a gbrain page. Content is markdown with frontmatter.',
-      inputSchema: z.object({ slug: z.string().min(1), content: z.string() }),
-    },
-    ({ slug, content }) => respond(() => gbrain(env, 'put_page', { slug, content })),
-  );
 }
