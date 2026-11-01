@@ -3,3 +3,27 @@ kind: Kustomization
 
 resources:
   - kv.yaml
+  - dns.yaml
+  - script.yaml
+
+configMapGenerator:
+  - name: oidc-keys-source
+    namespace: crossplane-system
+    files:
+      - content=OidcKeys.js
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        config.kubernetes.io/local-config: "true"
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: oidc-keys-source
+      fieldPath: data.content
+    targets:
+      - select:
+          kind: Script
+          name: oidc-keys
+        fieldPaths:
+          - spec.forProvider.content

@@ -1,0 +1,24 @@
+# oidc.simplesalt.company: proxied A record with dummy content; every request
+# is served by the oidc-keys Worker route (script.yaml). No tunnel ingress and
+# no Access app: nothing on this host reaches the cluster.
+apiVersion: dns.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: Record
+metadata:
+  name: oidc-simplesalt-company
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    zoneId: 260b251cdb53f8376875a8eb8d03ca0b
+    name: oidc
+    type: A
+    content: "192.0.2.1"
+    proxied: true
+    ttl: 1
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main

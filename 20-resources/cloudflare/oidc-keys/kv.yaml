@@ -9,6 +9,9 @@ metadata:
   name: cf-main-kv-oidc-keys
   namespace: crossplane-system
   annotations:
+    # Created by this manifest on 2026-11-01; pinned so a recreate adopts it
+    # rather than orphaning the id the Worker binding (script.yaml) uses.
+    crossplane.io/external-name: 93c380e5758140bc8bb8d48e64342bb1
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     entity: cluster
