@@ -71,12 +71,14 @@ async function rpc(env, method, params) {
 
 const callTool = async (env, name, args) => (await rpc(env, 'tools/call', { name, arguments: args })).result;
 
-test('tools/list exposes only read tools: whoami, three hindsight, two gbrain and three hermes-chats tools', async () => {
+test('tools/list exposes only read tools: whoami, three hindsight, two gbrain, three hermes-chats and the two doer Effort tools', async () => {
   const env = { HINDSIGHT: fakeFetcher(() => json({})), GBRAIN: fakeFetcher(() => json({})), HERMES_CHATS: fakeFetcher(() => json({})) };
   const { result } = await rpc(env, 'tools/list', {});
   assert.deepEqual(
     result.tools.map((t) => t.name).sort(),
     [
+      'effort_find',
+      'effort_get',
       'gbrain_get_page',
       'gbrain_search',
       'hermes_chats_list_day',

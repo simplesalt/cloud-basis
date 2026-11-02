@@ -1,3 +1,5 @@
+// (The role-gated Effort tools live in ./efforts and reuse respond/BackendError below.)
+//
 // Cowork-facing tools for the three in-cluster backends, reached through
 // Workers VPC service bindings (env.HINDSIGHT, env.GBRAIN, env.HERMES_CHATS;
 // see 30-mcp/worker-script.yaml). Hindsight and hermes-chats are plain REST
@@ -35,7 +37,7 @@ interface ToolResult {
 }
 
 /** Thrown for any backend failure; its message is the short text handed back as the tool error. */
-class BackendError extends Error {}
+export class BackendError extends Error {}
 
 function truncate(text: string): string {
   if (text.length <= MAX_RESULT_CHARS) return text;
@@ -43,7 +45,7 @@ function truncate(text: string): string {
 }
 
 /** Runs a tool body, turning text into a capped result and any BackendError into an MCP tool error. */
-async function respond(body: () => Promise<string>): Promise<ToolResult> {
+export async function respond(body: () => Promise<string>): Promise<ToolResult> {
   try {
     return { content: [{ type: 'text', text: truncate(await body()) }] };
   } catch (error) {

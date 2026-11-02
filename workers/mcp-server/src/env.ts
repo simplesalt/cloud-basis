@@ -19,6 +19,8 @@ export interface Env {
   GBRAIN: Fetcher;
   /** Workers VPC service binding to the hermes-chats read API (in-cluster REST, no auth; GET only). */
   HERMES_CHATS: Fetcher;
+  /** Workers VPC service binding to the Effort MCP server (in-cluster /mcp/coordinator and /mcp/doer). */
+  EFFORTS: Fetcher;
   /**
    * Injected by @cloudflare/workers-oauth-provider on every request it
    * routes to defaultHandler; not a real deploy-time binding.

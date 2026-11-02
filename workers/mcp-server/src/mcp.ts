@@ -1,5 +1,6 @@
 // The MCP surface itself: `whoami`, plus the Hindsight and gbrain tools
-// registered from ./backends.
+// registered from ./backends, plus the role-gated Effort tools from ./efforts
+// (doers see effort_find/effort_get; coordinators also the write tools).
 //
 // Library choice: @modelcontextprotocol/server's createMcpHandler() serves
 // Streamable HTTP statelessly, one fresh server instance per HTTP request,
@@ -14,6 +15,7 @@ import { createMcpHandler, McpServer, type McpHttpHandler } from '@modelcontextp
 import { z } from 'zod';
 
 import { registerBackendTools } from './backends';
+import { registerEffortTools, type Role } from './efforts';
 import type { Env } from './env';
 
 /**
@@ -31,11 +33,17 @@ export interface WorkerAuthInfo {
 }
 
 // Keyed by env: the tools close over its service bindings, which are stable for an isolate's life.
-const handlers = new WeakMap<Env, McpHttpHandler>();
+// A handler is also per role, since the role decides which Effort tools exist.
+const handlers = new WeakMap<Env, Map<Role, McpHttpHandler>>();
 
-/** The stateless MCP HTTP handler, built once per env (it holds no per-request state). */
-export function getMcpHandler(env: Env): McpHttpHandler {
-  let handler = handlers.get(env);
+/** The stateless MCP HTTP handler, built once per env and role (it holds no per-request state). Defaults to the least-privileged role. */
+export function getMcpHandler(env: Env, role: Role = 'doer'): McpHttpHandler {
+  let byRole = handlers.get(env);
+  if (byRole === undefined) {
+    byRole = new Map();
+    handlers.set(env, byRole);
+  }
+  let handler = byRole.get(role);
   if (handler === undefined) {
     handler = createMcpHandler(() => {
       const server = new McpServer({ name: 'ssint-main-mcp-server', version: '0.1.1' });
@@ -59,9 +67,10 @@ export function getMcpHandler(env: Env): McpHttpHandler {
         }
       );
       registerBackendTools(server, env);
+      registerEffortTools(server, env, role);
       return server;
     });
-    handlers.set(env, handler);
+    byRole.set(role, handler);
   }
   return handler;
 }

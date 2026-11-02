@@ -6,6 +6,7 @@
   "hindsightServiceId": "test-hindsight-service-id",
   "gbrainServiceId": "test-gbrain-service-id",
   "hermesChatsServiceId": "test-hermes-chats-service-id",
+  "effortsServiceId": "test-efforts-service-id",
   "gbrainKey": "test-gbrain-key",
   "allowedEmails": [
     "allowed@test.example"

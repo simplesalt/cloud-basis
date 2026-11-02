@@ -32,6 +32,7 @@ import {
 import { accessAuthorizationEndpoint, exchangeCodeForEmail } from './access';
 import { API_SIGNPOST_HOST, BUILD_CONFIG, isAllowedEmail } from './config';
 import { renderConsentPage } from './consent';
+import { roleForClientId } from './efforts';
 import type { Env } from './env';
 import { getMcpHandler, type WorkerAuthInfo } from './mcp';
 import { generateVerifier, s256Challenge } from './pkce';
@@ -238,7 +239,7 @@ export default {
             expiresAt: apiCtx.auth.expiresAt,
             extra: { email: apiCtx.props.email },
           };
-          return getMcpHandler(mcpEnv).fetch(mcpRequest, { authInfo });
+          return getMcpHandler(mcpEnv, roleForClientId(authInfo.clientId)).fetch(mcpRequest, { authInfo });
         },
       },
       defaultHandler: {
