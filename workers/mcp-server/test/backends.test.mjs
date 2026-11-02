@@ -71,12 +71,22 @@ async function rpc(env, method, params) {
 
 const callTool = async (env, name, args) => (await rpc(env, 'tools/call', { name, arguments: args })).result;
 
-test('tools/list exposes only read tools: whoami, three hindsight tools and the two allowlisted gbrain tools', async () => {
-  const env = { HINDSIGHT: fakeFetcher(() => json({})), GBRAIN: fakeFetcher(() => json({})) };
+test('tools/list exposes only read tools: whoami, three hindsight, two gbrain and three hermes-chats tools', async () => {
+  const env = { HINDSIGHT: fakeFetcher(() => json({})), GBRAIN: fakeFetcher(() => json({})), HERMES_CHATS: fakeFetcher(() => json({})) };
   const { result } = await rpc(env, 'tools/list', {});
   assert.deepEqual(
     result.tools.map((t) => t.name).sort(),
-    ['gbrain_get_page', 'gbrain_search', 'hindsight_list_banks', 'hindsight_recall', 'hindsight_reflect', 'whoami'],
+    [
+      'gbrain_get_page',
+      'gbrain_search',
+      'hermes_chats_list_day',
+      'hermes_chats_read_message',
+      'hermes_chats_read_session',
+      'hindsight_list_banks',
+      'hindsight_recall',
+      'hindsight_reflect',
+      'whoami',
+    ],
   );
 });
 
@@ -174,4 +184,92 @@ test('the write tools are gone: retain and put_page reach neither backend', asyn
     assert.equal(HINDSIGHT.calls.length + GBRAIN.calls.length, 0);
     assert.ok(response.error || response.result?.isError);
   }
+});
+
+// hermes-chats: read-only GETs against /days, /sessions and /messages.
+const HC = 'http://hermes-chats.ssint-main-ai.svc.k.famevans.win:8080';
+const hcEnv = (HERMES_CHATS) => ({ HINDSIGHT: fakeFetcher(() => json({})), GBRAIN: fakeFetcher(() => json({})), HERMES_CHATS });
+
+test('hermes_chats_list_day GETs /days/<date>', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json({ date: '2026-11-01', sessions: [{ session_id: 's1' }] }));
+  const result = await callTool(hcEnv(HERMES_CHATS), 'hermes_chats_list_day', { date: '2026-11-01' });
+  assert.equal(HERMES_CHATS.calls[0].url, `${HC}/days/2026-11-01`);
+  assert.equal(HERMES_CHATS.calls[0].init.method, 'GET');
+  assert.equal(JSON.parse(result.content[0].text).sessions[0].session_id, 's1');
+});
+
+test('hermes_chats_list_day rejects a malformed date without calling the backend', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json({}));
+  const response = await rpc(hcEnv(HERMES_CHATS), 'tools/call', { name: 'hermes_chats_list_day', arguments: { date: '../notes' } });
+  assert.equal(HERMES_CHATS.calls.length, 0);
+  assert.ok(response.error || response.result?.isError);
+});
+
+const fakeSession = (n, headChars = 10) => ({
+  session: { session_id: 'cron_1', title: 't', raw: { huge: 'x'.repeat(50_000) } },
+  messages: Array.from({ length: n }, (_, i) => ({ msg_id: i + 1, role: 'assistant', content_head: 'c'.repeat(headChars) })),
+});
+
+test('hermes_chats_read_session pages through messages with next_offset and drops session.raw', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json(fakeSession(5)));
+  const env = hcEnv(HERMES_CHATS);
+  const first = JSON.parse((await callTool(env, 'hermes_chats_read_session', { session_id: 'cron_1/x', limit: 2 })).content[0].text);
+  assert.equal(HERMES_CHATS.calls[0].url, `${HC}/sessions/cron_1%2Fx`);
+  assert.equal(first.session.raw, undefined);
+  assert.equal(first.session.title, 't');
+  assert.deepEqual(first.messages.map((m) => m.msg_id), [1, 2]);
+  assert.equal(first.total_messages, 5);
+  assert.equal(first.next_offset, 2);
+  const last = JSON.parse((await callTool(env, 'hermes_chats_read_session', { session_id: 'cron_1/x', offset: 4, limit: 2 })).content[0].text);
+  assert.deepEqual(last.messages.map((m) => m.msg_id), [5]);
+  assert.equal(last.next_offset, null);
+});
+
+test('hermes_chats_read_session refuses a limit over 200', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json(fakeSession(1)));
+  const response = await rpc(hcEnv(HERMES_CHATS), 'tools/call', { name: 'hermes_chats_read_session', arguments: { session_id: 's', limit: 201 } });
+  assert.equal(HERMES_CHATS.calls.length, 0);
+  assert.ok(response.error || response.result?.isError);
+});
+
+test('hermes_chats_read_session stops a page early instead of truncating it', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json(fakeSession(200, 5_000)));
+  const result = await callTool(hcEnv(HERMES_CHATS), 'hermes_chats_read_session', { session_id: 's', limit: 200 });
+  const text = result.content[0].text;
+  assert.ok(text.length <= 100_000);
+  const page = JSON.parse(text);
+  assert.ok(page.returned > 0 && page.returned < 200);
+  assert.equal(page.next_offset, page.returned);
+});
+
+test('hermes_chats_read_message passes part, offset and limit and returns next_offset', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json({ session_id: 's', msg_id: 7, part: 'reasoning', total_length: 250_000, offset: 90_000, limit: 90_000, returned: 90_000, text: 'r' }));
+  const result = await callTool(hcEnv(HERMES_CHATS), 'hermes_chats_read_message', { session_id: 's', msg_id: 7, part: 'reasoning', offset: 90_000 });
+  assert.equal(HERMES_CHATS.calls[0].url, `${HC}/messages/s/7?part=reasoning&offset=90000&limit=90000`);
+  assert.equal(HERMES_CHATS.calls[0].init.method, 'GET');
+  assert.equal(JSON.parse(result.content[0].text).next_offset, 180_000);
+});
+
+test('hermes_chats_read_message gives next_offset null on the last page and refuses a limit over 90,000', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json({ total_length: 100, offset: 0, limit: 90_000, returned: 100, text: 'x' }));
+  const env = hcEnv(HERMES_CHATS);
+  const result = await callTool(env, 'hermes_chats_read_message', { session_id: 's', msg_id: 1 });
+  assert.equal(JSON.parse(result.content[0].text).next_offset, null);
+  const response = await rpc(env, 'tools/call', { name: 'hermes_chats_read_message', arguments: { session_id: 's', msg_id: 1, limit: 90_001 } });
+  assert.equal(HERMES_CHATS.calls.length, 1);
+  assert.ok(response.error || response.result?.isError);
+});
+
+test('a hermes-chats 404 comes back as a short not-found tool error', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json({ error: 'not found' }, 404));
+  const result = await callTool(hcEnv(HERMES_CHATS), 'hermes_chats_read_session', { session_id: 'nope' });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /not found/);
+});
+
+test('no hermes-chats tool writes: a notes tool does not exist and every call so far was GET', async () => {
+  const HERMES_CHATS = fakeFetcher(() => json({}));
+  const response = await rpc(hcEnv(HERMES_CHATS), 'tools/call', { name: 'hermes_chats_add_note', arguments: { session_id: 's' } });
+  assert.equal(HERMES_CHATS.calls.length, 0);
+  assert.ok(response.error || response.result?.isError);
 });

@@ -5,6 +5,7 @@
   "kvNamespaceId": "fd79fd43d8ba42a4bba5092e51b4d337",
   "hindsightServiceId": "01a19208-be85-7712-8ca4-f3de5440a64b",
   "gbrainServiceId": "01a19208-be79-7bb2-b3c0-9e434acfad08",
+  "hermesChatsServiceId": "PENDING",
   "gbrainKey": "gbrain-mcp",
   "allowedEmails": [
     "dylan.evans@simplesalt.company"

@@ -5,6 +5,7 @@
   "kvNamespaceId": "test-kv-namespace-id",
   "hindsightServiceId": "test-hindsight-service-id",
   "gbrainServiceId": "test-gbrain-service-id",
+  "hermesChatsServiceId": "test-hermes-chats-service-id",
   "gbrainKey": "test-gbrain-key",
   "allowedEmails": [
     "allowed@test.example"

@@ -1,9 +1,11 @@
-// Cowork-facing tools for the two in-cluster backends, reached through
-// Workers VPC service bindings (env.HINDSIGHT, env.GBRAIN; see
-// 30-mcp/worker-script.yaml). Hindsight is plain REST with no auth; gbrain is
-// a stateless JSON-RPC /mcp endpoint that always answers as SSE.
+// Cowork-facing tools for the three in-cluster backends, reached through
+// Workers VPC service bindings (env.HINDSIGHT, env.GBRAIN, env.HERMES_CHATS;
+// see 30-mcp/worker-script.yaml). Hindsight and hermes-chats are plain REST
+// with no auth; gbrain is a stateless JSON-RPC /mcp endpoint that always
+// answers as SSE.
 //
-// Read-only: no tool here writes to either backend. gbrain lists ~116 tools
+// Read-only: no tool here writes to any backend. hermes-chats is only ever
+// sent GET, to /days, /sessions and /messages (never POST /notes). gbrain lists ~116 tools
 // and its key has admin scope, so only the two read tools in GBRAIN_TOOLS are
 // exposed — never forward an arbitrary tool name.
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -14,6 +16,14 @@ import type { Env } from './env';
 
 const HINDSIGHT_BASE = 'http://hindsight.ssint-main-ai.svc.k.famevans.win:8888';
 const GBRAIN_URL = 'http://gbrain.ssint-main-ai.svc.k.famevans.win:3131/mcp';
+const HERMES_CHATS_BASE = 'http://hermes-chats.ssint-main-ai.svc.k.famevans.win:8080';
+
+/** Most messages hermes_chats_read_session returns in one page. */
+export const MAX_SESSION_PAGE = 200;
+/** Most characters hermes_chats_read_message returns in one page, leaving room under MAX_RESULT_CHARS for the envelope. */
+export const MAX_MESSAGE_CHARS = 90_000;
+/** Character budget for one hermes_chats_read_session page; the page stops early rather than be truncated. */
+const SESSION_PAGE_BUDGET = 95_000;
 
 /** Cap on the text any tool returns, so one answer cannot flood the caller's context. */
 export const MAX_RESULT_CHARS = 100_000;
@@ -96,6 +106,60 @@ async function gbrain(env: Env, name: (typeof GBRAIN_TOOLS)[number], args: Recor
   return text;
 }
 
+/** GETs one hermes-chats path and returns the parsed JSON. 404 becomes a short "not found" tool error. */
+async function hermesChats(env: Env, path: string): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await env.HERMES_CHATS.fetch(`${HERMES_CHATS_BASE}${path}`, { method: 'GET' });
+  } catch {
+    throw new BackendError('hermes-chats is unreachable.');
+  }
+  if (res.status === 404) throw new BackendError('hermes-chats: not found.');
+  if (!res.ok) throw new BackendError(`hermes-chats returned HTTP ${res.status}.`);
+  return res.json();
+}
+
+interface SessionPage {
+  session: Record<string, unknown> | null;
+  total_messages: number;
+  offset: number;
+  returned: number;
+  next_offset: number | null;
+  messages: unknown[];
+}
+
+/**
+ * Cuts one page of messages out of a /sessions answer: from `offset`, at
+ * most `limit` messages, stopping early once the page would pass the
+ * character budget (always at least one message, so paging moves on).
+ * The session row's bulky raw copy is dropped; read_message has the detail.
+ */
+export function sessionPage(data: { session?: Record<string, unknown> | null; messages?: unknown[] }, offset: number, limit: number): SessionPage {
+  const all = data.messages ?? [];
+  let session: Record<string, unknown> | null = null;
+  if (data.session) {
+    const { raw: _raw, ...rest } = data.session;
+    session = rest;
+  }
+  const page: unknown[] = [];
+  let used = JSON.stringify(session).length + 200;
+  for (let i = offset; i < all.length && page.length < limit; i += 1) {
+    const size = JSON.stringify(all[i]).length + 1;
+    if (page.length > 0 && used + size > SESSION_PAGE_BUDGET) break;
+    page.push(all[i]);
+    used += size;
+  }
+  const end = offset + page.length;
+  return {
+    session,
+    total_messages: all.length,
+    offset,
+    returned: page.length,
+    next_offset: end < all.length ? end : null,
+    messages: page,
+  };
+}
+
 /** The only gbrain tools this server will call. */
 const GBRAIN_TOOLS = ['search', 'get_page'] as const;
 
@@ -171,4 +235,72 @@ export function registerBackendTools(server: McpServer, env: Env): void {
     ({ slug }) => respond(() => gbrain(env, 'get_page', { slug })),
   );
 
+  server.registerTool(
+    'hermes_chats_list_day',
+    {
+      title: 'List Hermes chat sessions for a day',
+      description:
+        'Lists the Hermes chat sessions with messages on one UTC day: title, source, model, message counts by role, ' +
+        'content and reasoning character totals, and flags (user_fail, tool_error, miss_report).',
+      inputSchema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD (UTC)') }),
+    },
+    ({ date }) => respond(async () => JSON.stringify(await hermesChats(env, `/days/${date}`))),
+  );
+
+  server.registerTool(
+    'hermes_chats_read_session',
+    {
+      title: 'Read a Hermes chat session',
+      description:
+        "Reads one page of a Hermes chat session's messages in order: role, tool name, finish reason, flags, character " +
+        'counts, and the head of the content and the head and tail of the reasoning. Pass next_offset back as offset ' +
+        'for the next page; it is null on the last page. Use hermes_chats_read_message for one message in full.',
+      inputSchema: z.object({
+        session_id: z.string().min(1),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(MAX_SESSION_PAGE).optional(),
+      }),
+    },
+    ({ session_id, offset, limit }) =>
+      respond(async () => {
+        const data = (await hermesChats(env, `/sessions/${encodeURIComponent(session_id)}`)) as {
+          session?: Record<string, unknown> | null;
+          messages?: unknown[];
+        };
+        return JSON.stringify(sessionPage(data, offset ?? 0, limit ?? 50));
+      }),
+  );
+
+  server.registerTool(
+    'hermes_chats_read_message',
+    {
+      title: 'Read one Hermes chat message',
+      description:
+        'Reads one message of a Hermes chat session in full, page by page: part is content, reasoning, tool_calls or ' +
+        'all (the raw message as JSON). Pass next_offset back as offset for the next page; it is null on the last page.',
+      inputSchema: z.object({
+        session_id: z.string().min(1),
+        msg_id: z.number().int().min(0),
+        part: z.enum(['content', 'reasoning', 'tool_calls', 'all']).optional(),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(MAX_MESSAGE_CHARS).optional(),
+      }),
+    },
+    ({ session_id, msg_id, part, offset, limit }) =>
+      respond(async () => {
+        const params = new URLSearchParams({
+          part: part ?? 'content',
+          offset: String(offset ?? 0),
+          limit: String(limit ?? MAX_MESSAGE_CHARS),
+        });
+        const data = (await hermesChats(env, `/messages/${encodeURIComponent(session_id)}/${msg_id}?${params}`)) as {
+          total_length?: number;
+          offset?: number;
+          returned?: number;
+        };
+        const end = (data.offset ?? 0) + (data.returned ?? 0);
+        const next_offset = data.returned && end < (data.total_length ?? 0) ? end : null;
+        return JSON.stringify({ ...data, next_offset });
+      }),
+  );
 }
