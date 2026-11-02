@@ -76,3 +76,30 @@ spec:
   providerConfigRef:
     kind: ProviderConfig
     name: ssint-main
+---
+# Cluster-local Effort MCP server (simplesalt/projects#859, server in #865,
+# brain manifests). The Worker forwards effort_* tools to /mcp/coordinator
+# or /mcp/doer by caller role.
+apiVersion: connectivity.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: DirectoryService
+metadata:
+  name: cf-main-vpc-efforts
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: main-efforts
+    type: http
+    httpPort: 8080
+    host:
+      hostname: efforts.ssint-main-efforts.svc.k.famevans.win
+      resolverNetwork:
+        tunnelId: 83c27a64-4074-474c-9a8f-19448d1c2081
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main
