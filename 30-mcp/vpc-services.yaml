@@ -49,3 +49,30 @@ spec:
   providerConfigRef:
     kind: ProviderConfig
     name: ssint-main
+---
+# Read-only Hermes chat transcripts (simplesalt/projects#854). The brain
+# repo's hermes-chats NetworkPolicy admits cloudflared from
+# cluster-named-routing; the Worker only calls its GET endpoints.
+apiVersion: connectivity.upjet-cloudflare.m.upbound.io/v1alpha1
+kind: DirectoryService
+metadata:
+  name: cf-main-vpc-hermes-chats
+  namespace: crossplane-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    entity: cluster
+    capability: infra
+spec:
+  forProvider:
+    accountId: ba92fe12c6c1275f965c7c86e3b392ac
+    name: main-hermes-chats
+    type: http
+    httpPort: 8080
+    host:
+      hostname: hermes-chats.ssint-main-ai.svc.k.famevans.win
+      resolverNetwork:
+        tunnelId: 83c27a64-4074-474c-9a8f-19448d1c2081
+  providerConfigRef:
+    kind: ProviderConfig
+    name: ssint-main
