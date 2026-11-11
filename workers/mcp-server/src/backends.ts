@@ -162,6 +162,48 @@ export function sessionPage(data: { session?: Record<string, unknown> | null; me
   };
 }
 
+/** Most sessions hermes_chats_list_day returns in one page. */
+export const MAX_DAY_PAGE = 200;
+/** Character budget for one hermes_chats_list_day page; the page stops early rather than be truncated. */
+const DAY_PAGE_BUDGET = 90_000;
+
+interface DayPage {
+  [key: string]: unknown;
+  total_sessions: number;
+  offset: number;
+  returned: number;
+  next_offset: number | null;
+  sessions: unknown[];
+}
+
+/**
+ * Cuts one page of sessions out of a /days answer: from `offset`, at most
+ * `limit` sessions, stopping early once the page would pass the character
+ * budget (always at least one session, so paging moves on). Every other
+ * field of the answer is kept on each page.
+ */
+export function dayPage(data: Record<string, unknown> & { sessions?: unknown[] }, offset: number, limit: number): DayPage {
+  const { sessions, ...rest } = data;
+  const all = sessions ?? [];
+  const page: unknown[] = [];
+  let used = JSON.stringify(rest).length + 200;
+  for (let i = offset; i < all.length && page.length < limit; i += 1) {
+    const size = JSON.stringify(all[i]).length + 1;
+    if (page.length > 0 && used + size > DAY_PAGE_BUDGET) break;
+    page.push(all[i]);
+    used += size;
+  }
+  const end = offset + page.length;
+  return {
+    ...rest,
+    total_sessions: all.length,
+    offset,
+    returned: page.length,
+    next_offset: end < all.length ? end : null,
+    sessions: page,
+  };
+}
+
 /** The only gbrain tools this server will call. */
 const GBRAIN_TOOLS = ['search', 'get_page'] as const;
 
@@ -243,10 +285,19 @@ export function registerBackendTools(server: McpServer, env: Env): void {
       title: 'List Hermes chat sessions for a day',
       description:
         'Lists the Hermes chat sessions with messages on one UTC day: title, source, model, message counts by role, ' +
-        'content and reasoning character totals, and flags (user_fail, tool_error, miss_report).',
-      inputSchema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD (UTC)') }),
+        'content and reasoning character totals, and flags (user_fail, tool_error, miss_report). Returns one page ' +
+        'with total_sessions; pass next_offset back as offset for the next page; it is null on the last page.',
+      inputSchema: z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD (UTC)'),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(MAX_DAY_PAGE).optional(),
+      }),
     },
-    ({ date }) => respond(async () => JSON.stringify(await hermesChats(env, `/days/${date}`))),
+    ({ date, offset, limit }) =>
+      respond(async () => {
+        const data = (await hermesChats(env, `/days/${date}`)) as Record<string, unknown> & { sessions?: unknown[] };
+        return JSON.stringify(dayPage(data, offset ?? 0, limit ?? 100));
+      }),
   );
 
   server.registerTool(

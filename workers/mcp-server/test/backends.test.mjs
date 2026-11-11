@@ -200,6 +200,43 @@ test('hermes_chats_list_day GETs /days/<date>', async () => {
   assert.equal(JSON.parse(result.content[0].text).sessions[0].session_id, 's1');
 });
 
+test('hermes_chats_list_day pages a busy 341-session day to completion, each page under 100,000 characters', async () => {
+  const sessions = Array.from({ length: 341 }, (_, i) => ({ session_id: `cron_${i}`, title: 't'.repeat(250), counts: { user: 1, assistant: 2 } }));
+  const HERMES_CHATS = fakeFetcher(() => json({ date: '2026-11-10', sessions }));
+  const env = hcEnv(HERMES_CHATS);
+  const seen = [];
+  let offset = 0;
+  let pages = 0;
+  while (offset !== null) {
+    const text = (await callTool(env, 'hermes_chats_list_day', { date: '2026-11-10', offset })).content[0].text;
+    assert.ok(text.length < 100_000);
+    const page = JSON.parse(text);
+    assert.equal(page.date, '2026-11-10');
+    assert.equal(page.total_sessions, 341);
+    assert.equal(page.offset, offset);
+    seen.push(...page.sessions.map((s) => s.session_id));
+    offset = page.next_offset;
+    pages += 1;
+    assert.ok(pages < 20);
+  }
+  assert.ok(pages > 1);
+  assert.deepEqual(seen, sessions.map((s) => s.session_id));
+});
+
+test('hermes_chats_list_day stops a page early on large sessions and refuses a limit over 200', async () => {
+  const sessions = Array.from({ length: 200 }, (_, i) => ({ session_id: `s${i}`, title: 'x'.repeat(2_000) }));
+  const HERMES_CHATS = fakeFetcher(() => json({ date: '2026-11-10', sessions }));
+  const env = hcEnv(HERMES_CHATS);
+  const text = (await callTool(env, 'hermes_chats_list_day', { date: '2026-11-10', limit: 200 })).content[0].text;
+  assert.ok(text.length < 100_000);
+  const page = JSON.parse(text);
+  assert.ok(page.returned > 0 && page.returned < 200);
+  assert.equal(page.next_offset, page.returned);
+  const response = await rpc(env, 'tools/call', { name: 'hermes_chats_list_day', arguments: { date: '2026-11-10', limit: 201 } });
+  assert.equal(HERMES_CHATS.calls.length, 1);
+  assert.ok(response.error || response.result?.isError);
+});
+
 test('hermes_chats_list_day rejects a malformed date without calling the backend', async () => {
   const HERMES_CHATS = fakeFetcher(() => json({}));
   const response = await rpc(hcEnv(HERMES_CHATS), 'tools/call', { name: 'hermes_chats_list_day', arguments: { date: '../notes' } });
