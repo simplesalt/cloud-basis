@@ -4,6 +4,8 @@ kind: Kustomization
 metadata:
   name: ss-cloud-basis-crossplane
   namespace: flux-system
+  labels:
+    kyverno-relabel: "2026-11-12"
 spec:
   interval: 5m
   retryInterval: 1m
@@ -33,6 +35,8 @@ kind: Kustomization
 metadata:
   name: ss-cloud-basis-providers
   namespace: flux-system
+  labels:
+    kyverno-relabel: "2026-11-12"
 spec:
   interval: 5m
   retryInterval: 1m
@@ -77,6 +81,8 @@ kind: Kustomization
 metadata:
   name: ss-cloud-basis-resources
   namespace: flux-system
+  labels:
+    kyverno-relabel: "2026-11-12"
 spec:
   interval: 5m
   retryInterval: 1m
@@ -95,6 +101,8 @@ kind: Kustomization
 metadata:
   name: ss-cloud-basis-mcp
   namespace: flux-system
+  labels:
+    kyverno-relabel: "2026-11-12"
 spec:
   interval: 5m
   retryInterval: 1m
