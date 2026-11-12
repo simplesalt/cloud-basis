@@ -29,6 +29,7 @@ metadata:
   labels:
     entity: cluster
     capability: infra
+    stateful: "false"
 spec:
   forProvider:
     accountId: ba92fe12c6c1275f965c7c86e3b392ac
